@@ -24,14 +24,12 @@ const Index = () => {
   };
 
   const handleEmployeeLogin = (username: string, password: string) => {
-    if (username === '123' && password === '803254') {
-      setUser({ name: 'Супер Администратор', role: 'admin' });
+    if (username === 'operator1' && password === 'operator') {
+      setUser({ name: 'Иван Петров', role: 'operator' });
+    } else if (username === 'okk1' && password === 'okk') {
+      setUser({ name: 'Мария Сидорова', role: 'okk' });
     } else if (username === 'admin' && password === 'admin') {
-      setUser({ name: 'Администратор', role: 'admin' });
-    } else if (username === 'okk' && password === 'okk') {
-      setUser({ name: 'Сотрудник ОКК', role: 'okk' });
-    } else if (username === 'operator' && password === 'operator') {
-      setUser({ name: 'Оператор КЦ', role: 'operator' });
+      setUser({ name: 'Алексей Козлов', role: 'admin' });
     } else if (username && password) {
       setUser({ name: username, role: 'operator' });
     }

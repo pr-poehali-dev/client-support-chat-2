@@ -109,7 +109,7 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     }
                 
                 cur.execute('''
-                    SELECT id, sender_type, sender_name, text, created_at
+                    SELECT id, sender_type, sender_name, message_text, created_at
                     FROM messages
                     WHERE chat_id = %s
                     ORDER BY created_at ASC
@@ -122,7 +122,7 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         'id': msg['id'],
                         'senderType': msg['sender_type'],
                         'senderName': msg['sender_name'] or '',
-                        'text': msg['text'],
+                        'text': msg['message_text'],
                         'createdAt': msg['created_at'].isoformat() if msg['created_at'] else None
                     })
                 
@@ -396,7 +396,7 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     }
                 
                 cur.execute('''
-                    INSERT INTO messages (chat_id, sender_type, sender_name, text)
+                    INSERT INTO messages (chat_id, sender_type, sender_name, message_text)
                     VALUES (%s, %s, %s, %s)
                     RETURNING id, created_at
                 ''', (chat_id, sender_type, sender_name, message_text))
