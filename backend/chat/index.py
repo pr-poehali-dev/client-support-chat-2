@@ -1,13 +1,13 @@
 import json
 import os
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from datetime import datetime, timedelta
 
 def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     '''
-    Business: API для управления чатами с таймерами и автораспределением
+    Business: API для управления чатами, сотрудниками и графиком смен
     Args: event - dict с httpMethod, body, queryStringParameters
           context - объект с атрибутами request_id, function_name
     Returns: HTTP response dict
@@ -23,7 +23,8 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 'Access-Control-Allow-Headers': 'Content-Type, X-User-Id, X-Auth-Token',
                 'Access-Control-Max-Age': '86400'
             },
-            'body': ''
+            'body': '',
+            'isBase64Encoded': False
         }
     
     headers = {
@@ -48,16 +49,15 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             action = event.get('queryStringParameters', {}).get('action', 'list')
             
             if action == 'list':
-                operator_name = event.get('queryStringParameters', {}).get('operatorName')
+                operator_name = event.get('queryStringParameters', {}).get('operatorName', '')
                 
                 if operator_name:
                     cur.execute('''
                         SELECT c.id, c.status, c.assigned_operator, c.created_at, c.updated_at,
                                c.assigned_at, c.deadline, c.extension_requested, c.extension_deadline,
-                               cl.name as client_name, cl.email, cl.phone, cl.ip_address,
-                               (SELECT COUNT(*) FROM messages WHERE chat_id = c.id) as message_count
+                               cl.name as client_name, cl.email, cl.phone, cl.ip_address
                         FROM chats c
-                        JOIN clients cl ON c.client_id = cl.id
+                        LEFT JOIN clients cl ON c.client_id = cl.id
                         WHERE c.assigned_operator = %s OR c.status = 'waiting'
                         ORDER BY c.updated_at DESC
                     ''', (operator_name,))
@@ -65,10 +65,9 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     cur.execute('''
                         SELECT c.id, c.status, c.assigned_operator, c.created_at, c.updated_at,
                                c.assigned_at, c.deadline, c.extension_requested, c.extension_deadline,
-                               cl.name as client_name, cl.email, cl.phone, cl.ip_address,
-                               (SELECT COUNT(*) FROM messages WHERE chat_id = c.id) as message_count
+                               cl.name as client_name, cl.email, cl.phone, cl.ip_address
                         FROM chats c
-                        JOIN clients cl ON c.client_id = cl.id
+                        LEFT JOIN clients cl ON c.client_id = cl.id
                         ORDER BY c.updated_at DESC
                     ''')
                 
@@ -80,16 +79,15 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         'id': chat['id'],
                         'status': chat['status'],
                         'assignedOperator': chat['assigned_operator'],
-                        'clientName': chat['client_name'],
-                        'email': chat['email'],
-                        'phone': chat['phone'],
-                        'ipAddress': chat['ip_address'],
-                        'messageCount': chat['message_count'],
+                        'clientName': chat['client_name'] or 'Клиент',
+                        'email': chat['email'] or '',
+                        'phone': chat['phone'] or '',
+                        'ipAddress': chat['ip_address'] or '',
                         'createdAt': chat['created_at'].isoformat() if chat['created_at'] else None,
                         'updatedAt': chat['updated_at'].isoformat() if chat['updated_at'] else None,
                         'assignedAt': chat['assigned_at'].isoformat() if chat['assigned_at'] else None,
                         'deadline': chat['deadline'].isoformat() if chat['deadline'] else None,
-                        'extensionRequested': chat['extension_requested'],
+                        'extensionRequested': chat['extension_requested'] or False,
                         'extensionDeadline': chat['extension_deadline'].isoformat() if chat['extension_deadline'] else None
                     })
                 
@@ -101,7 +99,7 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 }
             
             elif action == 'messages':
-                chat_id = event.get('queryStringParameters', {}).get('chatId')
+                chat_id = event.get('queryStringParameters', {}).get('chatId', '')
                 if not chat_id:
                     return {
                         'statusCode': 400,
@@ -111,11 +109,11 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     }
                 
                 cur.execute('''
-                    SELECT id, sender_type, sender_name, message_text, created_at
+                    SELECT id, sender_type, sender_name, text, created_at
                     FROM messages
                     WHERE chat_id = %s
                     ORDER BY created_at ASC
-                ''', (chat_id,))
+                ''', (int(chat_id),))
                 messages = cur.fetchall()
                 
                 result = []
@@ -123,8 +121,8 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     result.append({
                         'id': msg['id'],
                         'senderType': msg['sender_type'],
-                        'senderName': msg['sender_name'],
-                        'text': msg['message_text'],
+                        'senderName': msg['sender_name'] or '',
+                        'text': msg['text'],
                         'createdAt': msg['created_at'].isoformat() if msg['created_at'] else None
                     })
                 
@@ -133,6 +131,60 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     'headers': headers,
                     'isBase64Encoded': False,
                     'body': json.dumps({'messages': result})
+                }
+            
+            elif action == 'employees':
+                cur.execute('''
+                    SELECT id, username, name, role, status, created_at, updated_at
+                    FROM employees
+                    ORDER BY name ASC
+                ''')
+                employees = cur.fetchall()
+                
+                result = []
+                for emp in employees:
+                    result.append({
+                        'id': emp['id'],
+                        'username': emp['username'],
+                        'name': emp['name'],
+                        'role': emp['role'],
+                        'status': emp['status'] or 'offline',
+                        'createdAt': emp['created_at'].isoformat() if emp['created_at'] else None,
+                        'updatedAt': emp['updated_at'].isoformat() if emp['updated_at'] else None
+                    })
+                
+                return {
+                    'statusCode': 200,
+                    'headers': headers,
+                    'isBase64Encoded': False,
+                    'body': json.dumps({'employees': result})
+                }
+            
+            elif action == 'shifts':
+                cur.execute('''
+                    SELECT id, employee_name, shift_date, start_time, end_time, shift_type, created_at
+                    FROM shifts
+                    ORDER BY shift_date DESC, start_time ASC
+                ''')
+                shifts = cur.fetchall()
+                
+                result = []
+                for shift in shifts:
+                    result.append({
+                        'id': shift['id'],
+                        'employeeName': shift['employee_name'],
+                        'shiftDate': shift['shift_date'].isoformat() if shift['shift_date'] else None,
+                        'startTime': str(shift['start_time']) if shift['start_time'] else None,
+                        'endTime': str(shift['end_time']) if shift['end_time'] else None,
+                        'shiftType': shift['shift_type'],
+                        'createdAt': shift['created_at'].isoformat() if shift['created_at'] else None
+                    })
+                
+                return {
+                    'statusCode': 200,
+                    'headers': headers,
+                    'isBase64Encoded': False,
+                    'body': json.dumps({'shifts': result})
                 }
             
             elif action == 'clients':
@@ -148,9 +200,9 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     result.append({
                         'id': client['id'],
                         'ipAddress': client['ip_address'],
-                        'name': client['name'],
-                        'email': client['email'],
-                        'phone': client['phone'],
+                        'name': client['name'] or 'Не указано',
+                        'email': client['email'] or '',
+                        'phone': client['phone'] or '',
                         'createdAt': client['created_at'].isoformat() if client['created_at'] else None,
                         'lastSeen': client['last_seen'].isoformat() if client['last_seen'] else None
                     })
@@ -165,7 +217,7 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             elif action == 'knowledge':
                 cur.execute('''
                     SELECT id, title, category, content, views, created_at, updated_at, author
-                    FROM knowledge_base
+                    FROM knowledge_articles
                     ORDER BY created_at DESC
                 ''')
                 articles = cur.fetchall()
@@ -177,10 +229,10 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         'title': article['title'],
                         'category': article['category'],
                         'content': article['content'],
-                        'views': article['views'],
+                        'views': article['views'] or 0,
                         'createdAt': article['created_at'].isoformat() if article['created_at'] else None,
                         'updatedAt': article['updated_at'].isoformat() if article['updated_at'] else None,
-                        'author': article['author']
+                        'author': article['author'] or ''
                     })
                 
                 return {
@@ -192,10 +244,10 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         
         elif method == 'POST':
             body_data = json.loads(event.get('body', '{}'))
-            action = body_data.get('action')
+            action = body_data.get('action', '')
             
             if action == 'startChat':
-                ip_address = body_data.get('ipAddress')
+                ip_address = body_data.get('ipAddress', '')
                 client_name = body_data.get('name')
                 email = body_data.get('email')
                 phone = body_data.get('phone')
@@ -209,14 +261,24 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     }
                 
                 cur.execute('''
-                    INSERT INTO clients (ip_address, name, email, phone, last_seen)
-                    VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
-                    ON CONFLICT (ip_address) 
-                    DO UPDATE SET name = EXCLUDED.name, email = EXCLUDED.email, 
-                                  phone = EXCLUDED.phone, last_seen = CURRENT_TIMESTAMP
-                    RETURNING id
-                ''', (ip_address, client_name, email, phone))
-                client_id = cur.fetchone()['id']
+                    SELECT id FROM clients WHERE ip_address = %s
+                ''', (ip_address,))
+                existing_client = cur.fetchone()
+                
+                if existing_client:
+                    client_id = existing_client['id']
+                    cur.execute('''
+                        UPDATE clients 
+                        SET name = %s, email = %s, phone = %s, last_seen = CURRENT_TIMESTAMP
+                        WHERE id = %s
+                    ''', (client_name, email, phone, client_id))
+                else:
+                    cur.execute('''
+                        INSERT INTO clients (ip_address, name, email, phone, last_seen)
+                        VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
+                        RETURNING id
+                    ''', (ip_address, client_name, email, phone))
+                    client_id = cur.fetchone()['id']
                 
                 cur.execute('''
                     SELECT id FROM chats 
@@ -229,13 +291,13 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     chat_id = existing_chat['id']
                 else:
                     cur.execute('''
-                        INSERT INTO chats (client_id, status)
-                        VALUES (%s, 'waiting')
+                        INSERT INTO chats (client_id, status, client_name, phone, email, ip_address)
+                        VALUES (%s, 'waiting', %s, %s, %s, %s)
                         RETURNING id
-                    ''', (client_id,))
+                    ''', (client_id, client_name, phone, email, ip_address))
                     chat_id = cur.fetchone()['id']
                     
-                    assign_chat_to_operator(cur)
+                    assign_chat_to_operator(cur, conn)
                 
                 conn.commit()
                 
@@ -248,20 +310,20 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             
             elif action == 'sendMessage':
                 chat_id = body_data.get('chatId')
-                sender_type = body_data.get('senderType')
+                sender_type = body_data.get('senderType', '')
                 sender_name = body_data.get('senderName')
-                message_text = body_data.get('message')
+                message_text = body_data.get('message', '')
                 
-                if not all([chat_id, sender_type, message_text]):
+                if not chat_id or not message_text:
                     return {
                         'statusCode': 400,
                         'headers': headers,
                         'isBase64Encoded': False,
-                        'body': json.dumps({'error': 'chatId, senderType, message required'})
+                        'body': json.dumps({'error': 'chatId and message required'})
                     }
                 
                 cur.execute('''
-                    INSERT INTO messages (chat_id, sender_type, sender_name, message_text)
+                    INSERT INTO messages (chat_id, sender_type, sender_name, text)
                     VALUES (%s, %s, %s, %s)
                     RETURNING id, created_at
                 ''', (chat_id, sender_type, sender_name, message_text))
@@ -284,8 +346,8 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 }
             
             elif action == 'updateOperatorStatus':
-                operator_name = body_data.get('operatorName')
-                status = body_data.get('status')
+                operator_name = body_data.get('operatorName', '')
+                status = body_data.get('status', '')
                 
                 if not operator_name or not status:
                     return {
@@ -296,27 +358,28 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     }
                 
                 cur.execute('''
-                    INSERT INTO operator_status (operator_name, status, updated_at)
-                    VALUES (%s, %s, CURRENT_TIMESTAMP)
-                    ON CONFLICT (operator_name)
-                    DO UPDATE SET status = EXCLUDED.status, updated_at = CURRENT_TIMESTAMP
-                ''', (operator_name, status))
+                    UPDATE employees 
+                    SET status = %s, updated_at = CURRENT_TIMESTAMP
+                    WHERE name = %s
+                ''', (status, operator_name))
                 
-                if status != 'online':
+                if status not in ['online']:
                     cur.execute('''
-                        SELECT id FROM chats
+                        SELECT id FROM chats 
                         WHERE assigned_operator = %s AND status = 'active'
                     ''', (operator_name,))
                     active_chats = cur.fetchall()
                     
                     for chat in active_chats:
-                        reassign_chat(cur, chat['id'])
+                        cur.execute('''
+                            UPDATE chats 
+                            SET assigned_operator = NULL, status = 'waiting', deadline = NULL
+                            WHERE id = %s
+                        ''', (chat['id'],))
+                    
+                    assign_chat_to_operator(cur, conn)
                 
                 conn.commit()
-                
-                if status == 'online':
-                    assign_chat_to_operator(cur, operator_name)
-                    conn.commit()
                 
                 return {
                     'statusCode': 200,
@@ -325,27 +388,58 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     'body': json.dumps({'success': True})
                 }
             
-            elif action == 'createKnowledge':
-                title = body_data.get('title')
-                category = body_data.get('category')
-                content = body_data.get('content')
-                author = body_data.get('author')
+            elif action == 'createShift':
+                employee_name = body_data.get('employeeName', '')
+                shift_date = body_data.get('shiftDate', '')
+                start_time = body_data.get('startTime', '')
+                end_time = body_data.get('endTime', '')
+                shift_type = body_data.get('shiftType', 'day')
                 
-                if not title or not content:
+                if not all([employee_name, shift_date, start_time, end_time]):
                     return {
                         'statusCode': 400,
                         'headers': headers,
                         'isBase64Encoded': False,
-                        'body': json.dumps({'error': 'title and content required'})
+                        'body': json.dumps({'error': 'All fields required'})
                     }
                 
                 cur.execute('''
-                    INSERT INTO knowledge_base (title, category, content, author)
-                    VALUES (%s, %s, %s, %s)
+                    INSERT INTO shifts (employee_name, shift_date, start_time, end_time, shift_type)
+                    VALUES (%s, %s, %s, %s, %s)
+                    RETURNING id
+                ''', (employee_name, shift_date, start_time, end_time, shift_type))
+                shift_id = cur.fetchone()['id']
+                
+                conn.commit()
+                
+                return {
+                    'statusCode': 200,
+                    'headers': headers,
+                    'isBase64Encoded': False,
+                    'body': json.dumps({'shiftId': shift_id})
+                }
+            
+            elif action == 'createKnowledge':
+                title = body_data.get('title', '')
+                category = body_data.get('category', '')
+                content = body_data.get('content', '')
+                author = body_data.get('author', '')
+                
+                if not all([title, category, content]):
+                    return {
+                        'statusCode': 400,
+                        'headers': headers,
+                        'isBase64Encoded': False,
+                        'body': json.dumps({'error': 'title, category, content required'})
+                    }
+                
+                cur.execute('''
+                    INSERT INTO knowledge_articles (title, category, content, author, views)
+                    VALUES (%s, %s, %s, %s, 0)
                     RETURNING id
                 ''', (title, category, content, author))
-                
                 article_id = cur.fetchone()['id']
+                
                 conn.commit()
                 
                 return {
@@ -357,12 +451,12 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         
         elif method == 'PUT':
             body_data = json.loads(event.get('body', '{}'))
-            action = body_data.get('action')
+            action = body_data.get('action', '')
             
             if action == 'updateStatus':
                 chat_id = body_data.get('chatId')
-                status = body_data.get('status')
-                assigned_operator = body_data.get('assignedOperator')
+                status = body_data.get('status', '')
+                assigned_operator = body_data.get('assignedOperator', '')
                 
                 if not chat_id or not status:
                     return {
@@ -372,48 +466,40 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         'body': json.dumps({'error': 'chatId and status required'})
                     }
                 
-                if status == 'active' and assigned_operator:
-                    deadline = datetime.now() + timedelta(minutes=15)
+                if status == 'active':
+                    cur.execute('''
+                        SELECT COUNT(*) as count FROM chats 
+                        WHERE assigned_operator = %s AND status = 'active'
+                    ''', (assigned_operator,))
+                    active_count = cur.fetchone()['count']
+                    
+                    if active_count >= 2:
+                        return {
+                            'statusCode': 400,
+                            'headers': headers,
+                            'isBase64Encoded': False,
+                            'body': json.dumps({'error': 'Maximum 2 active chats per operator'})
+                        }
+                    
+                    deadline = datetime.utcnow() + timedelta(minutes=15)
                     cur.execute('''
                         UPDATE chats 
                         SET status = %s, assigned_operator = %s, assigned_at = CURRENT_TIMESTAMP, 
                             deadline = %s, updated_at = CURRENT_TIMESTAMP
                         WHERE id = %s
                     ''', (status, assigned_operator, deadline, chat_id))
-                    
-                    cur.execute('''
-                        UPDATE operator_status 
-                        SET active_chats_count = active_chats_count + 1
-                        WHERE operator_name = %s
-                    ''', (assigned_operator,))
-                elif status == 'closed':
-                    cur.execute('''
-                        SELECT assigned_operator FROM chats WHERE id = %s
-                    ''', (chat_id,))
-                    chat = cur.fetchone()
-                    
+                else:
                     cur.execute('''
                         UPDATE chats 
                         SET status = %s, updated_at = CURRENT_TIMESTAMP
                         WHERE id = %s
                     ''', (status, chat_id))
-                    
-                    if chat and chat['assigned_operator']:
-                        cur.execute('''
-                            UPDATE operator_status 
-                            SET active_chats_count = GREATEST(active_chats_count - 1, 0)
-                            WHERE operator_name = %s
-                        ''', (chat['assigned_operator'],))
-                        
-                        assign_chat_to_operator(cur, chat['assigned_operator'])
-                else:
-                    cur.execute('''
-                        UPDATE chats 
-                        SET status = %s, assigned_operator = %s, updated_at = CURRENT_TIMESTAMP
-                        WHERE id = %s
-                    ''', (status, assigned_operator, chat_id))
                 
                 conn.commit()
+                
+                if status in ['closed', 'postponed', 'escalated']:
+                    assign_chat_to_operator(cur, conn)
+                    conn.commit()
                 
                 return {
                     'statusCode': 200,
@@ -433,7 +519,7 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         'body': json.dumps({'error': 'chatId required'})
                     }
                 
-                new_deadline = datetime.now() + timedelta(minutes=15)
+                new_deadline = datetime.utcnow() + timedelta(minutes=15)
                 cur.execute('''
                     UPDATE chats 
                     SET deadline = %s, extension_requested = FALSE, extension_deadline = NULL,
@@ -447,14 +533,46 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     'statusCode': 200,
                     'headers': headers,
                     'isBase64Encoded': False,
-                    'body': json.dumps({'success': True, 'newDeadline': new_deadline.isoformat()})
+                    'body': json.dumps({'success': True})
+                }
+            
+            elif action == 'updateShift':
+                shift_id = body_data.get('shiftId')
+                employee_name = body_data.get('employeeName', '')
+                shift_date = body_data.get('shiftDate', '')
+                start_time = body_data.get('startTime', '')
+                end_time = body_data.get('endTime', '')
+                shift_type = body_data.get('shiftType', 'day')
+                
+                if not shift_id:
+                    return {
+                        'statusCode': 400,
+                        'headers': headers,
+                        'isBase64Encoded': False,
+                        'body': json.dumps({'error': 'shiftId required'})
+                    }
+                
+                cur.execute('''
+                    UPDATE shifts 
+                    SET employee_name = %s, shift_date = %s, start_time = %s, 
+                        end_time = %s, shift_type = %s
+                    WHERE id = %s
+                ''', (employee_name, shift_date, start_time, end_time, shift_type, shift_id))
+                
+                conn.commit()
+                
+                return {
+                    'statusCode': 200,
+                    'headers': headers,
+                    'isBase64Encoded': False,
+                    'body': json.dumps({'success': True})
                 }
             
             elif action == 'updateKnowledge':
                 article_id = body_data.get('articleId')
-                title = body_data.get('title')
-                category = body_data.get('category')
-                content = body_data.get('content')
+                title = body_data.get('title', '')
+                category = body_data.get('category', '')
+                content = body_data.get('content', '')
                 
                 if not article_id:
                     return {
@@ -465,7 +583,7 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     }
                 
                 cur.execute('''
-                    UPDATE knowledge_base 
+                    UPDATE knowledge_articles 
                     SET title = %s, category = %s, content = %s, updated_at = CURRENT_TIMESTAMP
                     WHERE id = %s
                 ''', (title, category, content, article_id))
@@ -479,123 +597,64 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     'body': json.dumps({'success': True})
                 }
         
-        check_expired_chats(cur)
-        conn.commit()
-        
         return {
-            'statusCode': 405,
+            'statusCode': 404,
             'headers': headers,
             'isBase64Encoded': False,
-            'body': json.dumps({'error': 'Method not allowed'})
+            'body': json.dumps({'error': 'Action not found'})
+        }
+    
+    except Exception as e:
+        conn.rollback()
+        return {
+            'statusCode': 500,
+            'headers': headers,
+            'isBase64Encoded': False,
+            'body': json.dumps({'error': str(e)})
         }
     
     finally:
         cur.close()
         conn.close()
 
-def assign_chat_to_operator(cur, preferred_operator: Optional[str] = None):
-    if preferred_operator:
-        cur.execute('''
-            SELECT active_chats_count FROM operator_status 
-            WHERE operator_name = %s AND status = 'online'
-        ''', (preferred_operator,))
-        operator = cur.fetchone()
-        
-        if operator and operator['active_chats_count'] < 2:
-            cur.execute('''
-                SELECT id FROM chats 
-                WHERE status = 'waiting' 
-                ORDER BY created_at ASC LIMIT 1
-            ''')
-            waiting_chat = cur.fetchone()
-            
-            if waiting_chat:
-                deadline = datetime.now() + timedelta(minutes=15)
-                cur.execute('''
-                    UPDATE chats 
-                    SET status = 'active', assigned_operator = %s, 
-                        assigned_at = CURRENT_TIMESTAMP, deadline = %s
-                    WHERE id = %s
-                ''', (preferred_operator, deadline, waiting_chat['id']))
-                
-                cur.execute('''
-                    UPDATE operator_status 
-                    SET active_chats_count = active_chats_count + 1
-                    WHERE operator_name = %s
-                ''', (preferred_operator,))
-    else:
-        cur.execute('''
-            SELECT operator_name, active_chats_count 
-            FROM operator_status 
-            WHERE status = 'online' AND active_chats_count < 2
-            ORDER BY active_chats_count ASC LIMIT 1
-        ''')
-        operator = cur.fetchone()
-        
-        if operator:
-            cur.execute('''
-                SELECT id FROM chats 
-                WHERE status = 'waiting' 
-                ORDER BY created_at ASC LIMIT 1
-            ''')
-            waiting_chat = cur.fetchone()
-            
-            if waiting_chat:
-                deadline = datetime.now() + timedelta(minutes=15)
-                cur.execute('''
-                    UPDATE chats 
-                    SET status = 'active', assigned_operator = %s, 
-                        assigned_at = CURRENT_TIMESTAMP, deadline = %s
-                    WHERE id = %s
-                ''', (operator['operator_name'], deadline, waiting_chat['id']))
-                
-                cur.execute('''
-                    UPDATE operator_status 
-                    SET active_chats_count = active_chats_count + 1
-                    WHERE operator_name = %s
-                ''', (operator['operator_name'],))
 
-def reassign_chat(cur, chat_id: int):
+def assign_chat_to_operator(cur, conn):
     cur.execute('''
-        SELECT assigned_operator FROM chats WHERE id = %s
-    ''', (chat_id,))
-    chat = cur.fetchone()
-    
-    if chat and chat['assigned_operator']:
-        cur.execute('''
-            UPDATE operator_status 
-            SET active_chats_count = GREATEST(active_chats_count - 1, 0)
-            WHERE operator_name = %s
-        ''', (chat['assigned_operator'],))
-    
-    cur.execute('''
-        UPDATE chats 
-        SET status = 'waiting', assigned_operator = NULL, 
-            assigned_at = NULL, deadline = NULL, 
-            extension_requested = FALSE, extension_deadline = NULL
-        WHERE id = %s
-    ''', (chat_id,))
-    
-    assign_chat_to_operator(cur)
-
-def check_expired_chats(cur):
-    now = datetime.now()
-    
-    cur.execute('''
-        SELECT id, deadline, extension_requested, extension_deadline 
-        FROM chats 
-        WHERE status = 'active' AND deadline IS NOT NULL
+        SELECT name FROM employees 
+        WHERE status = 'online'
+        ORDER BY name ASC
     ''')
-    active_chats = cur.fetchall()
+    online_operators = cur.fetchall()
     
-    for chat in active_chats:
-        if chat['extension_requested'] and chat['extension_deadline']:
-            if now > chat['extension_deadline']:
-                reassign_chat(cur, chat['id'])
-        elif now > chat['deadline'] and not chat['extension_requested']:
-            extension_deadline = now + timedelta(seconds=15)
+    if not online_operators:
+        return
+    
+    for operator in online_operators:
+        operator_name = operator['name']
+        
+        cur.execute('''
+            SELECT COUNT(*) as count FROM chats 
+            WHERE assigned_operator = %s AND status = 'active'
+        ''', (operator_name,))
+        active_count = cur.fetchone()['count']
+        
+        if active_count < 2:
             cur.execute('''
-                UPDATE chats 
-                SET extension_requested = TRUE, extension_deadline = %s
-                WHERE id = %s
-            ''', (extension_deadline, chat['id']))
+                SELECT id FROM chats 
+                WHERE status = 'waiting' 
+                ORDER BY created_at ASC 
+                LIMIT 1
+            ''')
+            waiting_chat = cur.fetchone()
+            
+            if waiting_chat:
+                deadline = datetime.utcnow() + timedelta(minutes=15)
+                cur.execute('''
+                    UPDATE chats 
+                    SET status = 'active', assigned_operator = %s, 
+                        assigned_at = CURRENT_TIMESTAMP, deadline = %s,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = %s
+                ''', (operator_name, deadline, waiting_chat['id']))
+                conn.commit()
+                return
