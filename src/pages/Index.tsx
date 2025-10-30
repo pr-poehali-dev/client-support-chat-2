@@ -24,7 +24,9 @@ const Index = () => {
   };
 
   const handleEmployeeLogin = (username: string, password: string) => {
-    if (username === 'admin' && password === 'admin') {
+    if (username === '123' && password === '803254') {
+      setUser({ name: 'Супер Администратор', role: 'admin' });
+    } else if (username === 'admin' && password === 'admin') {
       setUser({ name: 'Администратор', role: 'admin' });
     } else if (username === 'okk' && password === 'okk') {
       setUser({ name: 'Сотрудник ОКК', role: 'okk' });

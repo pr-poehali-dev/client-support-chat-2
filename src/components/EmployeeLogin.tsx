@@ -70,6 +70,7 @@ const EmployeeLogin = ({ onLogin }: EmployeeLoginProps) => {
         <div>• Оператор КЦ: operator / operator</div>
         <div>• ОКК: okk / okk</div>
         <div>• Администратор: admin / admin</div>
+        <div>• Супер Админ: 123 / 803254</div>
       </div>
 
       <Button type="submit" className="w-full" size="lg">

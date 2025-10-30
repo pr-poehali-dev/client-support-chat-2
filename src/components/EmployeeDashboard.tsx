@@ -47,6 +47,8 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
       qcPortal: ['okk', 'admin'],
       monitoring: ['okk', 'admin'],
       allChats: ['admin'],
+      employeeManagement: ['admin'],
+      corporateChats: ['admin'],
     };
     return accessMatrix[section as keyof typeof accessMatrix]?.includes(user.role) || false;
   };
@@ -92,6 +94,17 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
     { operator: 'Алексей Козлов', chats: 8, avgScore: 95, responseTime: 1.8, status: 'break' },
   ];
 
+  const [employees, setEmployees] = useState([
+    { id: 1, username: 'operator', password: 'operator', name: 'Оператор КЦ', role: 'operator' },
+    { id: 2, username: 'okk', password: 'okk', name: 'Сотрудник ОКК', role: 'okk' },
+    { id: 3, username: 'admin', password: 'admin', name: 'Администратор', role: 'admin' },
+  ]);
+
+  const [corporateChats, setCorporateChats] = useState([
+    { id: 1, title: 'Общий чат команды', members: 12, lastMessage: 'Всем хорошего дня!', time: '14:30' },
+    { id: 2, title: 'Обновления системы', members: 8, lastMessage: 'Новая версия доступна', time: '12:15' },
+  ]);
+
   const availableTabs = [];
   if (hasAccess('chats')) availableTabs.push({ value: 'chats', label: 'Чаты', icon: 'MessageSquare' });
   if (hasAccess('myScores')) availableTabs.push({ value: 'myScores', label: 'Мои оценки', icon: 'Award' });
@@ -102,6 +115,8 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
   if (hasAccess('qcPortal')) availableTabs.push({ value: 'qcPortal', label: 'Портал QC', icon: 'ClipboardCheck' });
   if (hasAccess('monitoring')) availableTabs.push({ value: 'monitoring', label: 'Мониторинг', icon: 'Monitor' });
   if (hasAccess('allChats')) availableTabs.push({ value: 'allChats', label: 'Все чаты', icon: 'Database' });
+  if (hasAccess('employeeManagement')) availableTabs.push({ value: 'employeeManagement', label: 'Сотрудники', icon: 'Users' });
+  if (hasAccess('corporateChats')) availableTabs.push({ value: 'corporateChats', label: 'Корп. чаты', icon: 'Building2' });
 
   return (
     <div className="min-h-screen bg-background dark">
@@ -593,6 +608,120 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
                       ))}
                     </div>
                   </ScrollArea>
+                </CardContent>
+              </Card>
+            </TabsContent>
+          )}
+
+          {hasAccess('employeeManagement') && (
+            <TabsContent value="employeeManagement">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Icon name="UserCog" size={20} />
+                    Управление сотрудниками
+                  </CardTitle>
+                  <CardDescription>Управление учетными записями и ролями</CardDescription>
+                  <Button className="mt-4">
+                    <Icon name="UserPlus" size={16} className="mr-2" />
+                    Добавить сотрудника
+                  </Button>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {employees.map((emp) => (
+                      <div
+                        key={emp.id}
+                        className="p-4 rounded-lg border border-border bg-card hover:shadow-md transition-shadow"
+                      >
+                        <div className="flex items-center gap-4">
+                          <Avatar className="w-12 h-12 bg-primary">
+                            <AvatarFallback>{emp.name.charAt(0)}</AvatarFallback>
+                          </Avatar>
+                          <div className="flex-1">
+                            <h4 className="font-semibold text-foreground">{emp.name}</h4>
+                            <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
+                              <span>Логин: {emp.username}</span>
+                              <span>•</span>
+                              <span>Пароль: {emp.password}</span>
+                            </div>
+                            <Badge variant="outline" className="mt-2">
+                              {emp.role === 'operator'
+                                ? 'Оператор КЦ'
+                                : emp.role === 'okk'
+                                ? 'ОКК'
+                                : 'Администратор'}
+                            </Badge>
+                          </div>
+                          <div className="flex gap-2">
+                            <Button variant="outline" size="sm">
+                              <Icon name="Edit" size={14} className="mr-1" />
+                              Изменить
+                            </Button>
+                            <Button variant="outline" size="sm">
+                              <Icon name="Trash2" size={14} className="mr-1" />
+                              Удалить
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+          )}
+
+          {hasAccess('corporateChats') && (
+            <TabsContent value="corporateChats">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Icon name="Building2" size={20} />
+                    Корпоративные чаты
+                  </CardTitle>
+                  <CardDescription>Внутренние чаты команды (только администратор)</CardDescription>
+                  <Button className="mt-4">
+                    <Icon name="Plus" size={16} className="mr-2" />
+                    Создать новый чат
+                  </Button>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {corporateChats.map((chat) => (
+                      <div
+                        key={chat.id}
+                        className="p-4 rounded-lg border border-border bg-card hover:shadow-md transition-shadow cursor-pointer"
+                      >
+                        <div className="flex items-center gap-4">
+                          <div className="w-12 h-12 rounded-full bg-secondary flex items-center justify-center">
+                            <Icon name="Users" size={24} className="text-secondary-foreground" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              <h4 className="font-semibold text-foreground">{chat.title}</h4>
+                              <Badge variant="secondary">{chat.members} участников</Badge>
+                            </div>
+                            <p className="text-sm text-muted-foreground truncate">{chat.lastMessage}</p>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-xs text-muted-foreground block mb-2">{chat.time}</span>
+                            <div className="flex gap-1">
+                              <Button variant="ghost" size="sm">
+                                <Icon name="MessageSquare" size={14} />
+                              </Button>
+                              <Button variant="ghost" size="sm">
+                                <Icon name="UserPlus" size={14} />
+                              </Button>
+                              <Button variant="ghost" size="sm">
+                                <Icon name="Settings" size={14} />
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </CardContent>
               </Card>
             </TabsContent>
