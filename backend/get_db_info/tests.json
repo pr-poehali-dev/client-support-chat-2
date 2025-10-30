@@ -1,0 +1,25 @@
+[
+  {
+    "name": "Get employees table info",
+    "event": {
+      "httpMethod": "GET",
+      "queryStringParameters": {
+        "table": "employees",
+        "schema": "t_p86396956_client_support_chat_"
+      }
+    },
+    "expect": {
+      "statusCode": 200
+    }
+  },
+  {
+    "name": "Missing table parameter",
+    "event": {
+      "httpMethod": "GET",
+      "queryStringParameters": {}
+    },
+    "expect": {
+      "statusCode": 400
+    }
+  }
+]

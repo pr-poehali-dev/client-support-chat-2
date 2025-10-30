@@ -69,6 +69,9 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
       chats: ['operator', 'okk', 'admin'],
       myScores: ['operator', 'okk', 'admin'],
       knowledge: ['operator', 'okk', 'admin'],
+      news: ['operator', 'okk', 'admin'],
+      okkPortal: ['operator', 'okk', 'admin'],
+      mySchedule: ['operator', 'okk', 'admin'],
       qcPortal: ['okk', 'admin'],
       monitoring: ['okk', 'admin'],
       allChats: ['admin'],
@@ -605,6 +608,15 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
   if (hasAccess('knowledge')) {
     availableTabs.push({ id: 'knowledge', icon: 'BookOpen', label: 'База знаний' });
   }
+  if (hasAccess('news')) {
+    availableTabs.push({ id: 'news', icon: 'Newspaper', label: 'Новости' });
+  }
+  if (hasAccess('okkPortal')) {
+    availableTabs.push({ id: 'okkPortal', icon: 'Building2', label: 'Портал ОКК' });
+  }
+  if (hasAccess('mySchedule')) {
+    availableTabs.push({ id: 'mySchedule', icon: 'Clock', label: 'График работы' });
+  }
   if (hasAccess('employeeManagement')) {
     availableTabs.push({ id: 'employees', icon: 'Users', label: 'Сотрудники' });
   }
@@ -618,8 +630,14 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
   const selectedChatData = chats.find(c => c.id === selectedChat);
 
   return (
-    <div className="min-h-screen bg-background dark flex">
-      <aside className={`${sidebarOpen ? 'w-64' : 'w-20'} bg-card border-r border-border transition-all duration-300 flex flex-col`}>
+    <div className="min-h-screen bg-background dark flex flex-col md:flex-row">
+      {sidebarOpen && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-40 md:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+      <aside className={`${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'} ${sidebarOpen ? 'w-64' : 'md:w-20'} fixed md:relative z-50 md:z-auto h-full bg-card border-r border-border transition-all duration-300 flex flex-col`}>
         <div className="p-4 border-b border-border flex items-center justify-between">
           {sidebarOpen && <h1 className="text-xl font-bold text-foreground">КЦ Поток</h1>}
           <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(!sidebarOpen)}>
@@ -633,8 +651,11 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
               <Button
                 key={tab.id}
                 variant={activeTab === tab.id ? 'default' : 'ghost'}
-                className={`w-full ${!sidebarOpen && 'justify-center'} gap-2`}
-                onClick={() => setActiveTab(tab.id)}
+                className={`w-full ${!sidebarOpen && 'md:justify-center'} gap-2`}
+                onClick={() => {
+                  setActiveTab(tab.id);
+                  if (window.innerWidth < 768) setSidebarOpen(false);
+                }}
               >
                 <Icon name={tab.icon as any} size={18} />
                 {sidebarOpen && <span>{tab.label}</span>}
@@ -690,7 +711,7 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
       <main className="flex-1 overflow-hidden flex">
         {hasAccess('chats') && activeTab === 'chats' && (
           <>
-            <div className="w-96 border-r border-border flex flex-col bg-card">
+            <div className="hidden md:flex w-96 border-r border-border flex-col bg-card">
               <div className="p-4 border-b border-border">
                 <div className="flex items-center justify-between mb-3">
                   <h2 className="text-lg font-bold">Чаты</h2>
@@ -758,6 +779,14 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
                   <div className="p-4 border-b border-border bg-card">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className="md:hidden"
+                          onClick={() => setSidebarOpen(true)}
+                        >
+                          <Icon name="Menu" size={20} />
+                        </Button>
                         <Avatar className="w-12 h-12 bg-secondary">
                           <AvatarFallback>{selectedChatData.client.charAt(0)}</AvatarFallback>
                         </Avatar>
@@ -955,10 +984,18 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
         )}
 
         {hasAccess('employeeManagement') && activeTab === 'employees' && (
-          <div className="flex-1 p-6">
+          <div className="flex-1 p-3 md:p-6">
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="md:hidden"
+                    onClick={() => setSidebarOpen(true)}
+                  >
+                    <Icon name="Menu" size={20} />
+                  </Button>
                   <Icon name="Users" size={20} />
                   Управление сотрудниками
                 </CardTitle>
@@ -1013,11 +1050,19 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
         )}
 
         {hasAccess('shifts') && activeTab === 'shifts' && (
-          <div className="flex-1 p-6">
+          <div className="flex-1 p-3 md:p-6">
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 justify-between">
                   <div className="flex items-center gap-2">
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className="md:hidden"
+                      onClick={() => setSidebarOpen(true)}
+                    >
+                      <Icon name="Menu" size={20} />
+                    </Button>
                     <Icon name="Calendar" size={20} />
                     График смен
                   </div>
@@ -1147,11 +1192,19 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
         )}
 
         {hasAccess('knowledge') && activeTab === 'knowledge' && (
-          <div className="flex-1 p-6">
+          <div className="flex-1 p-3 md:p-6">
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 justify-between">
                   <div className="flex items-center gap-2">
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className="md:hidden"
+                      onClick={() => setSidebarOpen(true)}
+                    >
+                      <Icon name="Menu" size={20} />
+                    </Button>
                     <Icon name="BookOpen" size={20} />
                     База знаний
                   </div>
@@ -1248,11 +1301,167 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
           </div>
         )}
 
-        {hasAccess('clientsDatabase') && activeTab === 'clientsDatabase' && (
-          <div className="flex-1 p-6">
+        {hasAccess('news') && activeTab === 'news' && (
+          <div className="flex-1 p-3 md:p-6">
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="md:hidden"
+                    onClick={() => setSidebarOpen(true)}
+                  >
+                    <Icon name="Menu" size={20} />
+                  </Button>
+                  <Icon name="Newspaper" size={20} />
+                  Новости
+                </CardTitle>
+                <CardDescription>Последние новости и объявления</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ScrollArea className="h-[600px]">
+                  <div className="space-y-4">
+                    {knowledgeArticles.filter((a: any) => a.category === 'news').map((article: any) => (
+                      <div key={article.id} className="p-4 rounded-lg border border-border bg-card">
+                        <h4 className="font-semibold mb-2">{article.title}</h4>
+                        <p className="text-sm text-muted-foreground whitespace-pre-wrap">{article.content}</p>
+                        <p className="text-xs text-muted-foreground mt-2">Автор: {article.author || 'Администрация'}</p>
+                      </div>
+                    ))}
+                    {knowledgeArticles.filter((a: any) => a.category === 'news').length === 0 && (
+                      <div className="text-center py-12 text-muted-foreground">
+                        <Icon name="Newspaper" size={48} className="mx-auto mb-3 opacity-30" />
+                        <p>Новостей пока нет</p>
+                      </div>
+                    )}
+                  </div>
+                </ScrollArea>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {hasAccess('okkPortal') && activeTab === 'okkPortal' && (
+          <div className="flex-1 p-3 md:p-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="md:hidden"
+                    onClick={() => setSidebarOpen(true)}
+                  >
+                    <Icon name="Menu" size={20} />
+                  </Button>
+                  <Icon name="Building2" size={20} />
+                  Портал ОКК
+                </CardTitle>
+                <CardDescription>Полезные ссылки и ресурсы</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid gap-4">
+                  <a 
+                    href="https://jira.company.com" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="p-4 rounded-lg border border-border bg-card hover:shadow-md transition-shadow flex items-center gap-3"
+                  >
+                    <Icon name="ExternalLink" size={20} className="text-primary" />
+                    <div>
+                      <h4 className="font-semibold">Jira</h4>
+                      <p className="text-sm text-muted-foreground">Система управления задачами</p>
+                    </div>
+                  </a>
+                  <a 
+                    href="https://confluence.company.com" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="p-4 rounded-lg border border-border bg-card hover:shadow-md transition-shadow flex items-center gap-3"
+                  >
+                    <Icon name="ExternalLink" size={20} className="text-primary" />
+                    <div>
+                      <h4 className="font-semibold">Confluence</h4>
+                      <p className="text-sm text-muted-foreground">База знаний компании</p>
+                    </div>
+                  </a>
+                  <a 
+                    href="https://hr.company.com" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="p-4 rounded-lg border border-border bg-card hover:shadow-md transition-shadow flex items-center gap-3"
+                  >
+                    <Icon name="ExternalLink" size={20} className="text-primary" />
+                    <div>
+                      <h4 className="font-semibold">HR Портал</h4>
+                      <p className="text-sm text-muted-foreground">Кадровые документы</p>
+                    </div>
+                  </a>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {hasAccess('mySchedule') && activeTab === 'mySchedule' && (
+          <div className="flex-1 p-3 md:p-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="md:hidden"
+                    onClick={() => setSidebarOpen(true)}
+                  >
+                    <Icon name="Menu" size={20} />
+                  </Button>
+                  <Icon name="Clock" size={20} />
+                  Мой график работы
+                </CardTitle>
+                <CardDescription>Расписание смен на текущую неделю</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {shifts.filter((s: any) => s.employee_name === user.name).map((shift: any) => (
+                    <div key={shift.id} className="p-4 rounded-lg border border-border bg-card flex items-center justify-between">
+                      <div>
+                        <p className="font-semibold">{new Date(shift.date).toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {shift.start_time} - {shift.end_time}
+                        </p>
+                      </div>
+                      <Badge variant={shift.shift_type === 'work' ? 'default' : 'secondary'}>
+                        {shift.shift_type === 'work' ? 'Рабочая смена' : shift.shift_type === 'day_off' ? 'Выходной' : 'Отпуск'}
+                      </Badge>
+                    </div>
+                  ))}
+                  {shifts.filter((s: any) => s.employee_name === user.name).length === 0 && (
+                    <div className="text-center py-12 text-muted-foreground">
+                      <Icon name="Clock" size={48} className="mx-auto mb-3 opacity-30" />
+                      <p>График пока не назначен</p>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {hasAccess('clientsDatabase') && activeTab === 'clientsDatabase' && (
+          <div className="flex-1 p-3 md:p-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="md:hidden"
+                    onClick={() => setSidebarOpen(true)}
+                  >
+                    <Icon name="Menu" size={20} />
+                  </Button>
                   <Icon name="Database" size={20} />
                   База данных клиентов
                 </CardTitle>
@@ -1304,10 +1513,18 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
         )}
 
         {hasAccess('qcPortal') && activeTab === 'qcPortal' && (
-          <div className="flex-1 p-6">
+          <div className="flex-1 p-3 md:p-6">
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="md:hidden"
+                    onClick={() => setSidebarOpen(true)}
+                  >
+                    <Icon name="Menu" size={20} />
+                  </Button>
                   <Icon name="ClipboardCheck" size={20} />
                   QC Портал - Закрытые тикеты
                 </CardTitle>
@@ -1426,11 +1643,19 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
         )}
 
         {hasAccess('myScores') && activeTab === 'myScores' && (
-          <div className="flex-1 p-6">
+          <div className="flex-1 p-3 md:p-6">
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 justify-between">
                   <div className="flex items-center gap-2">
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className="md:hidden"
+                      onClick={() => setSidebarOpen(true)}
+                    >
+                      <Icon name="Menu" size={20} />
+                    </Button>
                     <Icon name="Star" size={20} />
                     Мои оценки
                   </div>

@@ -331,7 +331,7 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 cur.execute('''
                     SELECT id, username, name, role, status
                     FROM employees
-                    WHERE username = %s AND password = %s
+                    WHERE username = %s AND password_hash = %s
                 ''', (username, password))
                 employee = cur.fetchone()
                 
