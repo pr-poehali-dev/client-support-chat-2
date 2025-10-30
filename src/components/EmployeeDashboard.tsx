@@ -33,9 +33,21 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
   const [closeReason, setCloseReason] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [chats, setChats] = useState([
-    { id: 1, client: 'Иван Петров', phone: '+7 (999) 123-45-67', lastMessage: 'Здравствуйте, нужна помощь', time: '14:23', unread: 2, status: 'active' },
-    { id: 2, client: 'Мария Сидорова', phone: '+7 (999) 234-56-78', lastMessage: 'Спасибо за помощь!', time: '13:45', unread: 0, status: 'closed' },
-    { id: 3, client: 'Алексей Козлов', phone: '+7 (999) 345-67-89', lastMessage: 'Когда будет ответ?', time: '12:10', unread: 1, status: 'active' },
+    { id: 1, client: 'Иван Петров', phone: '+7 (999) 123-45-67', lastMessage: 'Здравствуйте, нужна помощь', time: '14:23', unread: 2, status: 'active', messages: [
+      { id: 1, sender: 'client', text: 'Здравствуйте, нужна помощь', time: '14:20' },
+      { id: 2, sender: 'client', text: 'У меня проблема с заказом', time: '14:23' }
+    ]},
+    { id: 2, client: 'Мария Сидорова', phone: '+7 (999) 234-56-78', lastMessage: 'Спасибо за помощь!', time: '13:45', unread: 0, status: 'closed', messages: [] },
+    { id: 3, client: 'Алексей Козлов', phone: '+7 (999) 345-67-89', lastMessage: 'Когда будет ответ?', time: '12:10', unread: 1, status: 'active', messages: [
+      { id: 1, sender: 'client', text: 'Когда будет ответ?', time: '12:10' }
+    ]},
+  ]);
+  const [openChatId, setOpenChatId] = useState<number | null>(null);
+  const [messageText, setMessageText] = useState('');
+  const [employees, setEmployees] = useState([
+    { id: 1, username: 'operator1', password: 'operator', name: 'Иван Петров', role: 'operator', status: 'online' as const, chats: 15, avgScore: 92, responseTime: 2.1 },
+    { id: 2, username: 'operator2', password: 'okk', name: 'Мария Сидорова', role: 'okk', status: 'online' as const, chats: 12, avgScore: 88, responseTime: 3.5 },
+    { id: 3, username: 'operator3', password: 'admin', name: 'Алексей Козлов', role: 'operator', status: 'break' as const, chats: 8, avgScore: 95, responseTime: 1.8 },
   ]);
 
   const getRoleName = (role: string) => {
@@ -71,26 +83,61 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
   useEffect(() => {
     if (operatorStatus === 'online' && (user.role === 'operator' || user.role === 'okk')) {
       const interval = setInterval(() => {
-        const shouldReceiveNewChat = Math.random() > 0.7;
+        const shouldReceiveNewChat = Math.random() > 0.8;
         if (shouldReceiveNewChat) {
           const newChatId = Date.now();
           const clients = ['Дмитрий Новиков', 'Елена Васильева', 'Сергей Морозов', 'Ольга Кузнецова', 'Павел Соколов'];
           const messages = ['Добрый день!', 'Помогите разобраться', 'У меня вопрос', 'Срочно нужна помощь', 'Не получается оформить заказ'];
+          const messageText = messages[Math.floor(Math.random() * messages.length)];
+          const currentTime = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
           const newChat = {
             id: newChatId,
             client: clients[Math.floor(Math.random() * clients.length)],
             phone: `+7 (999) ${Math.floor(100 + Math.random() * 900)}-${Math.floor(10 + Math.random() * 90)}-${Math.floor(10 + Math.random() * 90)}`,
-            lastMessage: messages[Math.floor(Math.random() * messages.length)],
-            time: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }),
+            lastMessage: messageText,
+            time: currentTime,
             unread: 1,
-            status: 'active'
+            status: 'active',
+            messages: [{ id: 1, sender: 'client', text: messageText, time: currentTime }]
           };
           setChats(prev => [newChat, ...prev]);
         }
-      }, 15000);
+      }, 10000);
       return () => clearInterval(interval);
     }
   }, [operatorStatus, user.role]);
+
+  const handleSendMessage = (chatId: number) => {
+    if (!messageText.trim()) return;
+    const currentTime = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+    setChats(prev => prev.map(chat => {
+      if (chat.id === chatId) {
+        const newMessage = { id: (chat.messages?.length || 0) + 1, sender: 'operator', text: messageText, time: currentTime };
+        return {
+          ...chat,
+          messages: [...(chat.messages || []), newMessage],
+          lastMessage: messageText,
+          time: currentTime,
+          unread: 0
+        };
+      }
+      return chat;
+    }));
+    setMessageText('');
+  };
+
+  const handleOpenChat = (chatId: number) => {
+    setOpenChatId(chatId);
+    setChats(prev => prev.map(chat => 
+      chat.id === chatId ? { ...chat, unread: 0 } : chat
+    ));
+  };
+
+  const handleEmployeeStatusChange = (employeeId: number, newStatus: 'online' | 'break' | 'lunch' | 'training' | 'dnd') => {
+    setEmployees(prev => prev.map(emp => 
+      emp.id === employeeId ? { ...emp, status: newStatus } : emp
+    ));
+  };
 
   const handleCloseChat = (chatId: number, reason: string) => {
     setChats(prev => prev.map(chat => 
@@ -134,11 +181,35 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
     { metric: 'Время ответа (мин)', value: 2.3, target: 3.0, period: 'За месяц' },
   ];
 
-  const mockJiraTasks = [
-    { id: 'TASK-123', title: 'Ошибка в оплате', status: 'В работе', priority: 'high', assignee: 'Оператор 1' },
-    { id: 'TASK-124', title: 'Вопрос по доставке', status: 'Открыта', priority: 'medium', assignee: 'Не назначен' },
-    { id: 'TASK-125', title: 'Возврат товара', status: 'Ожидает ОКК', priority: 'low', assignee: 'ОКК' },
-  ];
+  const [jiraTasks, setJiraTasks] = useState([
+    { id: 'TASK-123', title: 'Ошибка в оплате', status: 'В работе', priority: 'high' as const, assignee: 'Оператор 1' },
+    { id: 'TASK-124', title: 'Вопрос по доставке', status: 'Открыта', priority: 'medium' as const, assignee: 'Не назначен' },
+    { id: 'TASK-125', title: 'Возврат товара', status: 'Ожидает ОКК', priority: 'low' as const, assignee: 'ОКК' },
+  ]);
+
+  const handleTaskPriorityChange = (taskId: string, newPriority: 'high' | 'medium' | 'low') => {
+    setJiraTasks(prev => prev.map(task => 
+      task.id === taskId ? { ...task, priority: newPriority } : task
+    ));
+  };
+
+  const getPriorityColor = (priority: string) => {
+    const colors = {
+      high: 'bg-destructive text-destructive-foreground',
+      medium: 'bg-yellow-500 text-white',
+      low: 'bg-blue-500 text-white'
+    };
+    return colors[priority as keyof typeof colors] || 'bg-muted';
+  };
+
+  const getPriorityLabel = (priority: string) => {
+    const labels = {
+      high: 'Высокий',
+      medium: 'Средний',
+      low: 'Низкий'
+    };
+    return labels[priority as keyof typeof labels] || priority;
+  };
 
   const mockKnowledge = [
     { id: 1, title: 'Как обработать возврат', category: 'Возвраты', views: 245 },
@@ -329,7 +400,7 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
                           key={chat.id}
                           className="p-4 rounded-lg border border-border bg-card hover:shadow-md transition-shadow"
                         >
-                          <div className="flex items-center gap-4 mb-3">
+                          <div className="flex items-center gap-4 mb-3 cursor-pointer" onClick={() => handleOpenChat(chat.id)}>
                             <Avatar className="w-12 h-12 bg-secondary">
                               <AvatarFallback>{chat.client.charAt(0)}</AvatarFallback>
                             </Avatar>
@@ -347,6 +418,32 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
                             </div>
                             <span className="text-xs text-muted-foreground">{chat.time}</span>
                           </div>
+
+                          {openChatId === chat.id && (
+                            <div className="mb-3 p-3 border border-border rounded-lg bg-muted/30">
+                              <div className="space-y-2 max-h-60 overflow-y-auto mb-3">
+                                {chat.messages?.map((msg) => (
+                                  <div key={msg.id} className={`flex ${msg.sender === 'operator' ? 'justify-end' : 'justify-start'}`}>
+                                    <div className={`max-w-[70%] p-2 rounded-lg ${msg.sender === 'operator' ? 'bg-primary text-primary-foreground' : 'bg-card border border-border'}`}>
+                                      <p className="text-sm">{msg.text}</p>
+                                      <p className="text-xs opacity-70 mt-1">{msg.time}</p>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                              <div className="flex gap-2">
+                                <Input
+                                  placeholder="Введите сообщение..."
+                                  value={messageText}
+                                  onChange={(e) => setMessageText(e.target.value)}
+                                  onKeyDown={(e) => e.key === 'Enter' && handleSendMessage(chat.id)}
+                                />
+                                <Button size="sm" onClick={() => handleSendMessage(chat.id)}>
+                                  <Icon name="Send" size={16} />
+                                </Button>
+                              </div>
+                            </div>
+                          )}
                           
                           <div className="flex gap-2 flex-wrap">
                             <Dialog>
@@ -568,35 +665,51 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
                         <Icon name="List" size={18} />
                         Мои задания
                       </h4>
-                      {mockJiraTasks.map((task) => (
+                      {jiraTasks.map((task) => (
                         <div
                           key={task.id}
                           className="p-4 rounded-lg border border-border bg-card hover:shadow-md transition-shadow"
                         >
                           <div className="flex items-start justify-between mb-2">
-                            <div>
+                            <div className="flex-1">
                               <div className="flex items-center gap-2 mb-1">
                                 <span className="text-xs font-mono text-muted-foreground">{task.id}</span>
-                                <Badge
-                                  variant={
-                                    task.priority === 'high'
-                                      ? 'destructive'
-                                      : task.priority === 'medium'
-                                      ? 'default'
-                                      : 'secondary'
-                                  }
-                                >
-                                  {task.priority === 'high'
-                                    ? 'Высокий'
-                                    : task.priority === 'medium'
-                                    ? 'Средний'
-                                    : 'Низкий'}
-                                </Badge>
                               </div>
                               <h4 className="font-semibold text-foreground">{task.title}</h4>
                               <p className="text-xs text-muted-foreground mt-1">Исполнитель: {task.assignee}</p>
                             </div>
                             <Badge variant="outline">{task.status}</Badge>
+                          </div>
+                          <div className="flex items-center gap-2 mt-3">
+                            <span className="text-xs text-muted-foreground">Приоритет:</span>
+                            <Select value={task.priority} onValueChange={(val: any) => handleTaskPriorityChange(task.id, val)}>
+                              <SelectTrigger className="h-7 w-32">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="high">
+                                  <div className="flex items-center gap-2">
+                                    <div className="w-2 h-2 rounded-full bg-destructive" />
+                                    Высокий
+                                  </div>
+                                </SelectItem>
+                                <SelectItem value="medium">
+                                  <div className="flex items-center gap-2">
+                                    <div className="w-2 h-2 rounded-full bg-yellow-500" />
+                                    Средний
+                                  </div>
+                                </SelectItem>
+                                <SelectItem value="low">
+                                  <div className="flex items-center gap-2">
+                                    <div className="w-2 h-2 rounded-full bg-blue-500" />
+                                    Низкий
+                                  </div>
+                                </SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <Badge className={getPriorityColor(task.priority)}>
+                              {getPriorityLabel(task.priority)}
+                            </Badge>
                           </div>
                           {user.role === 'okk' || user.role === 'admin' ? (
                             <Button variant="outline" size="sm" className="mt-2">
@@ -773,33 +886,73 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">
-                    {mockMonitoring.map((op, idx) => (
+                    {employees.map((emp) => (
                       <div
-                        key={idx}
+                        key={emp.id}
                         className="p-4 rounded-lg border border-border bg-card hover:shadow-md transition-shadow"
                       >
                         <div className="flex items-center gap-4">
                           <Avatar className="w-12 h-12 bg-primary">
-                            <AvatarFallback>{op.operator.charAt(0)}</AvatarFallback>
+                            <AvatarFallback>{emp.name.charAt(0)}</AvatarFallback>
                           </Avatar>
-                          <div className="flex-1 grid grid-cols-2 md:grid-cols-4 gap-4">
+                          <div className="flex-1 grid grid-cols-2 md:grid-cols-5 gap-4">
                             <div>
-                              <p className="font-semibold text-foreground">{op.operator}</p>
-                              <Badge variant={op.status === 'online' ? 'default' : 'secondary'} className="text-xs">
-                                {op.status === 'online' ? 'В сети' : 'Перерыв'}
-                              </Badge>
+                              <p className="font-semibold text-foreground">{emp.name}</p>
+                              <p className="text-xs text-muted-foreground">{getRoleName(emp.role)}</p>
+                            </div>
+                            <div>
+                              <Select value={emp.status} onValueChange={(val: any) => handleEmployeeStatusChange(emp.id, val)}>
+                                <SelectTrigger className="h-8">
+                                  <div className="flex items-center gap-2">
+                                    <div className={`w-2 h-2 rounded-full ${getStatusColor(emp.status)}`} />
+                                    <SelectValue />
+                                  </div>
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="online">
+                                    <div className="flex items-center gap-2">
+                                      <div className="w-2 h-2 rounded-full bg-secondary" />
+                                      На линии
+                                    </div>
+                                  </SelectItem>
+                                  <SelectItem value="break">
+                                    <div className="flex items-center gap-2">
+                                      <div className="w-2 h-2 rounded-full bg-yellow-500" />
+                                      Перерыв
+                                    </div>
+                                  </SelectItem>
+                                  <SelectItem value="lunch">
+                                    <div className="flex items-center gap-2">
+                                      <div className="w-2 h-2 rounded-full bg-orange-500" />
+                                      Обед
+                                    </div>
+                                  </SelectItem>
+                                  <SelectItem value="training">
+                                    <div className="flex items-center gap-2">
+                                      <div className="w-2 h-2 rounded-full bg-blue-500" />
+                                      Обучение
+                                    </div>
+                                  </SelectItem>
+                                  <SelectItem value="dnd">
+                                    <div className="flex items-center gap-2">
+                                      <div className="w-2 h-2 rounded-full bg-destructive" />
+                                      Не беспокоить
+                                    </div>
+                                  </SelectItem>
+                                </SelectContent>
+                              </Select>
                             </div>
                             <div>
                               <p className="text-xs text-muted-foreground">Активных чатов</p>
-                              <p className="text-lg font-bold text-foreground">{op.chats}</p>
+                              <p className="text-lg font-bold text-foreground">{emp.chats}</p>
                             </div>
                             <div>
                               <p className="text-xs text-muted-foreground">Средний балл</p>
-                              <p className="text-lg font-bold text-secondary">{op.avgScore}</p>
+                              <p className="text-lg font-bold text-secondary">{emp.avgScore}</p>
                             </div>
                             <div>
                               <p className="text-xs text-muted-foreground">Время ответа</p>
-                              <p className="text-lg font-bold text-primary">{op.responseTime} мин</p>
+                              <p className="text-lg font-bold text-primary">{emp.responseTime} мин</p>
                             </div>
                           </div>
                         </div>
