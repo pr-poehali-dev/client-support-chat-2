@@ -533,7 +533,7 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
                   </div>
                 </CardContent>
               </Card>
-            </TabsContent>
+            </div>
           )}
 
           {hasAccess('jira') && activeTab === 'jira' && (
@@ -610,7 +610,7 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
                   </div>
                 </CardContent>
               </Card>
-            </TabsContent>
+            </div>
           )}
 
           {hasAccess('knowledge') && activeTab === 'knowledge' && (
@@ -651,7 +651,7 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
                   </div>
                 </CardContent>
               </Card>
-            </TabsContent>
+            </div>
           )}
 
           {hasAccess('news') && activeTab === 'news' && (
@@ -700,7 +700,7 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
                   </div>
                 </CardContent>
               </Card>
-            </TabsContent>
+            </div>
           )}
 
           {hasAccess('qcPortal') && activeTab === 'qcPortal' && (
@@ -758,7 +758,7 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
                   </div>
                 </CardContent>
               </Card>
-            </TabsContent>
+            </div>
           )}
 
           {hasAccess('monitoring') && activeTab === 'monitoring' && (
@@ -808,7 +808,7 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
                   </div>
                 </CardContent>
               </Card>
-            </TabsContent>
+            </div>
           )}
 
           {hasAccess('allChats') && activeTab === 'allChats' && (
@@ -866,7 +866,7 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
                   </ScrollArea>
                 </CardContent>
               </Card>
-            </TabsContent>
+            </div>
           )}
 
           {hasAccess('employeeManagement') && activeTab === 'employeeManagement' && (
@@ -925,7 +925,7 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
                   </div>
                 </CardContent>
               </Card>
-            </TabsContent>
+            </div>
           )}
 
           {hasAccess('corporateChats') && activeTab === 'corporateChats' && (
