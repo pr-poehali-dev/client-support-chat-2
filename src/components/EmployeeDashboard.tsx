@@ -3,7 +3,6 @@ import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -11,6 +10,7 @@ import { Progress } from '@/components/ui/progress';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import Icon from '@/components/ui/icon';
 
 const CHAT_API_URL = 'https://functions.poehali.dev/a33a1e04-98e5-4c92-8585-2a7f74db1d36';
@@ -37,13 +37,15 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
   const [openChatId, setOpenChatId] = useState<number | null>(null);
   const [messageText, setMessageText] = useState('');
   const [employees, setEmployees] = useState([
-    { id: 1, username: 'operator1', password: 'operator', name: 'Иван Петров', role: 'operator', status: 'online' as const, chats: 15, avgScore: 92, responseTime: 2.1 },
-    { id: 2, username: 'operator2', password: 'okk', name: 'Мария Сидорова', role: 'okk', status: 'online' as const, chats: 12, avgScore: 88, responseTime: 3.5 },
-    { id: 3, username: 'operator3', password: 'admin', name: 'Алексей Козлов', role: 'operator', status: 'break' as const, chats: 8, avgScore: 95, responseTime: 1.8 },
+    { id: 1, name: 'Иван Петров', role: 'operator', status: 'online' as const },
+    { id: 2, name: 'Мария Сидорова', role: 'okk', status: 'online' as const },
+    { id: 3, name: 'Алексей Козлов', role: 'operator', status: 'break' as const },
   ]);
   const [clients, setClients] = useState<any[]>([]);
   const [newChatNotifications, setNewChatNotifications] = useState<number[]>([]);
-  const [previousChatCount, setPreviousChatCount] = useState(0);
+  const [knowledgeArticles, setKnowledgeArticles] = useState<any[]>([]);
+  const [isEditingArticle, setIsEditingArticle] = useState(false);
+  const [currentArticle, setCurrentArticle] = useState<any>(null);
 
   const getRoleName = (role: string) => {
     switch (role) {
@@ -72,14 +74,48 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
       employeeManagement: ['admin'],
       corporateChats: ['admin'],
       clientsDatabase: ['admin'],
+      knowledgeEdit: ['admin'],
     };
     return accessMatrix[section as keyof typeof accessMatrix]?.includes(user.role) || false;
   };
 
+  const getTimeRemaining = (deadline: string | null) => {
+    if (!deadline) return null;
+    const now = new Date().getTime();
+    const end = new Date(deadline).getTime();
+    const diff = end - now;
+    
+    if (diff <= 0) return { minutes: 0, seconds: 0, expired: true };
+    
+    const minutes = Math.floor(diff / 60000);
+    const seconds = Math.floor((diff % 60000) / 1000);
+    return { minutes, seconds, expired: false };
+  };
+
+  useEffect(() => {
+    const updateStatus = async () => {
+      try {
+        await fetch(CHAT_API_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'updateOperatorStatus',
+            operatorName: user.name,
+            status: operatorStatus,
+          }),
+        });
+      } catch (error) {
+        console.error('Failed to update operator status:', error);
+      }
+    };
+
+    updateStatus();
+  }, [operatorStatus, user.name]);
+
   useEffect(() => {
     const fetchChats = async () => {
       try {
-        const response = await fetch(`${CHAT_API_URL}?action=list`);
+        const response = await fetch(`${CHAT_API_URL}?action=list&operatorName=${user.name}`);
         const data = await response.json();
         
         const formattedChats = data.chats.map((chat: any) => ({
@@ -93,12 +129,18 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
           unread: 0,
           status: chat.status,
           assignedOperator: chat.assignedOperator,
+          assignedAt: chat.assignedAt,
+          deadline: chat.deadline,
+          extensionRequested: chat.extensionRequested,
+          extensionDeadline: chat.extensionDeadline,
           messages: []
         }));
 
-        if (formattedChats.length > previousChatCount) {
-          const newChats = formattedChats.slice(0, formattedChats.length - previousChatCount);
-          setNewChatNotifications(prev => [...prev, ...newChats.map((c: any) => c.id)]);
+        const waitingChats = formattedChats.filter((c: any) => c.status === 'waiting');
+        const newWaitingChats = waitingChats.filter((c: any) => !newChatNotifications.includes(c.id));
+        
+        if (newWaitingChats.length > 0) {
+          setNewChatNotifications(prev => [...prev, ...newWaitingChats.map((c: any) => c.id)]);
           
           if (Notification.permission === 'granted') {
             new Notification('Новый чат!', {
@@ -107,7 +149,7 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
             });
           }
         }
-        setPreviousChatCount(formattedChats.length);
+
         setChats(formattedChats);
       } catch (error) {
         console.error('Failed to fetch chats:', error);
@@ -115,9 +157,9 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
     };
 
     fetchChats();
-    const interval = setInterval(fetchChats, 5000);
+    const interval = setInterval(fetchChats, 3000);
     return () => clearInterval(interval);
-  }, [previousChatCount]);
+  }, [user.name, newChatNotifications]);
 
   useEffect(() => {
     if (Notification.permission === 'default') {
@@ -142,6 +184,22 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
     const interval = setInterval(fetchClients, 10000);
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    if (!hasAccess('knowledge')) return;
+    
+    const fetchKnowledge = async () => {
+      try {
+        const response = await fetch(`${CHAT_API_URL}?action=knowledge`);
+        const data = await response.json();
+        setKnowledgeArticles(data.articles);
+      } catch (error) {
+        console.error('Failed to fetch knowledge:', error);
+      }
+    };
+
+    fetchKnowledge();
+  }, [activeTab]);
 
   const handleSendMessage = async (chatId: number) => {
     if (!messageText.trim()) return;
@@ -207,9 +265,7 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
         }),
       });
 
-      setChats(prev => prev.map(chat => 
-        chat.id === chatId ? { ...chat, status: 'closed' } : chat
-      ));
+      setChats(prev => prev.filter(chat => chat.id !== chatId));
       setSelectedChat(null);
       setCloseReason('');
     } catch (error) {
@@ -263,6 +319,21 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
     }
   };
 
+  const handleExtendChat = async (chatId: number) => {
+    try {
+      await fetch(CHAT_API_URL, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'extendChat',
+          chatId
+        }),
+      });
+    } catch (error) {
+      console.error('Failed to extend chat:', error);
+    }
+  };
+
   const handleAcceptChat = async (chatId: number) => {
     try {
       await fetch(CHAT_API_URL, {
@@ -276,73 +347,49 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
         }),
       });
 
-      setChats(prev => prev.map(chat => 
-        chat.id === chatId ? { ...chat, status: 'active', assignedOperator: user.name } : chat
-      ));
       setNewChatNotifications(prev => prev.filter(id => id !== chatId));
     } catch (error) {
       console.error('Failed to accept chat:', error);
     }
   };
 
-  const mockQCScores = [
-    { date: '2024-01-15', category: 'Качество обслуживания', score: 95, comment: 'Отличная работа', operator: 'Текущий оператор' },
-    { date: '2024-01-10', category: 'Скорость ответа', score: 88, comment: 'Хорошо, но можно быстрее', operator: 'Текущий оператор' },
-    { date: '2024-01-05', category: 'Решение проблем', score: 92, comment: 'Высокий уровень', operator: 'Текущий оператор' },
-  ];
+  const handleSaveArticle = async () => {
+    try {
+      if (currentArticle.id) {
+        await fetch(CHAT_API_URL, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'updateKnowledge',
+            articleId: currentArticle.id,
+            title: currentArticle.title,
+            category: currentArticle.category,
+            content: currentArticle.content
+          }),
+        });
+      } else {
+        await fetch(CHAT_API_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'createKnowledge',
+            title: currentArticle.title,
+            category: currentArticle.category,
+            content: currentArticle.content,
+            author: user.name
+          }),
+        });
+      }
 
-  const mockResults = [
-    { metric: 'Обработано обращений', value: 127, target: 150, period: 'За месяц' },
-    { metric: 'Средняя оценка', value: 4.8, target: 4.5, period: 'За месяц' },
-    { metric: 'Время ответа (мин)', value: 2.3, target: 3.0, period: 'За месяц' },
-  ];
-
-  const [jiraTasks, setJiraTasks] = useState([
-    { id: 'TASK-123', title: 'Ошибка в оплате', status: 'В работе', priority: 'high' as const, assignee: 'Оператор 1' },
-    { id: 'TASK-124', title: 'Вопрос по доставке', status: 'Открыта', priority: 'medium' as const, assignee: 'Не назначен' },
-    { id: 'TASK-125', title: 'Возврат товара', status: 'Ожидает ОКК', priority: 'low' as const, assignee: 'ОКК' },
-  ]);
-
-  const handleTaskPriorityChange = (taskId: string, newPriority: 'high' | 'medium' | 'low') => {
-    setJiraTasks(prev => prev.map(task => 
-      task.id === taskId ? { ...task, priority: newPriority } : task
-    ));
+      const response = await fetch(`${CHAT_API_URL}?action=knowledge`);
+      const data = await response.json();
+      setKnowledgeArticles(data.articles);
+      setIsEditingArticle(false);
+      setCurrentArticle(null);
+    } catch (error) {
+      console.error('Failed to save article:', error);
+    }
   };
-
-  const getPriorityColor = (priority: string) => {
-    const colors = {
-      high: 'bg-destructive text-destructive-foreground',
-      medium: 'bg-yellow-500 text-white',
-      low: 'bg-blue-500 text-white'
-    };
-    return colors[priority as keyof typeof colors] || 'bg-muted';
-  };
-
-  const getPriorityLabel = (priority: string) => {
-    const labels = {
-      high: 'Высокий',
-      medium: 'Средний',
-      low: 'Низкий'
-    };
-    return labels[priority as keyof typeof labels] || priority;
-  };
-
-  const mockKnowledge = [
-    { id: 1, title: 'Как обработать возврат', category: 'Возвраты', views: 245 },
-    { id: 2, title: 'Процедура оформления скидки', category: 'Скидки', views: 189 },
-    { id: 3, title: 'Инструкция по работе с заказами', category: 'Заказы', views: 312 },
-  ];
-
-  const mockNews = [
-    { id: 1, title: 'Обновление системы', date: '15.01.2024', text: 'Внедрены новые функции чата', author: 'Администратор' },
-    { id: 2, title: 'Изменения в регламенте', date: '10.01.2024', text: 'Обновлен порядок обработки заявок', author: 'Администратор' },
-  ];
-
-  const mockMonitoring = [
-    { id: 1, operator: 'Иван Петров', chats: 15, avgScore: 92, responseTime: 2.1, status: 'online' },
-    { id: 2, operator: 'Мария Сидорова', chats: 12, avgScore: 88, responseTime: 3.5, status: 'online' },
-    { id: 3, operator: 'Алексей Козлов', chats: 8, avgScore: 95, responseTime: 1.8, status: 'break' },
-  ];
 
   const getStatusName = (status: string) => {
     const statusMap: Record<string, string> = {
@@ -366,45 +413,19 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
     return colorMap[status] || 'bg-muted';
   };
 
-  const [corporateChats, setCorporateChats] = useState([
-    { id: 1, title: 'Общий чат команды', members: 12, lastMessage: 'Всем хорошего дня!', time: '14:30' },
-    { id: 2, title: 'Обновления системы', members: 8, lastMessage: 'Новая версия доступна', time: '12:15' },
-  ]);
-
   const availableTabs = [];
 
   if (hasAccess('chats')) {
-    availableTabs.push({ id: 'chats', icon: 'MessageSquare', label: 'Чаты' });
+    availableTabs.push({ id: 'chats', icon: 'MessageSquare', label: 'Мои чаты' });
   }
   if (hasAccess('allChats')) {
     availableTabs.push({ id: 'allChats', icon: 'MessagesSquare', label: 'Все чаты' });
   }
-  if (hasAccess('myScores')) {
-    availableTabs.push({ id: 'myScores', icon: 'BarChart3', label: 'Мои оценки' });
-  }
-  if (hasAccess('results')) {
-    availableTabs.push({ id: 'results', icon: 'TrendingUp', label: 'Результаты' });
-  }
-  if (hasAccess('jira')) {
-    availableTabs.push({ id: 'jira', icon: 'ListTodo', label: 'Jira задачи' });
-  }
   if (hasAccess('knowledge')) {
     availableTabs.push({ id: 'knowledge', icon: 'BookOpen', label: 'База знаний' });
   }
-  if (hasAccess('news')) {
-    availableTabs.push({ id: 'news', icon: 'Newspaper', label: 'Новости' });
-  }
-  if (hasAccess('qcPortal')) {
-    availableTabs.push({ id: 'qcPortal', icon: 'Shield', label: 'Портал ОКК' });
-  }
-  if (hasAccess('monitoring')) {
-    availableTabs.push({ id: 'monitoring', icon: 'Activity', label: 'Мониторинг' });
-  }
   if (hasAccess('employeeManagement')) {
     availableTabs.push({ id: 'employees', icon: 'Users', label: 'Сотрудники' });
-  }
-  if (hasAccess('corporateChats')) {
-    availableTabs.push({ id: 'corporateChats', icon: 'Building', label: 'Корп. чаты' });
   }
   if (hasAccess('clientsDatabase')) {
     availableTabs.push({ id: 'clientsDatabase', icon: 'Database', label: 'База клиентов' });
@@ -489,171 +510,196 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <Icon name="Users" size={20} />
-                    Активные чаты с клиентами
+                    Мои чаты
                     {newChatNotifications.length > 0 && (
                       <Badge variant="destructive">
-                        {newChatNotifications.length} новых
+                        {newChatNotifications.length} в очереди
                       </Badge>
                     )}
                   </CardTitle>
                   <CardDescription>
-                    Список текущих обращений • Новые чаты автоматически отображаются здесь
+                    Лимит: 2 чата одновременно • Новые чаты в очереди автоматически назначатся
                   </CardDescription>
-                  <div className="mt-4 p-3 rounded-lg bg-primary/10 border border-primary/20">
-                    <div className="flex items-center gap-2 text-sm">
-                      <Icon name="Info" size={16} className="text-primary" />
-                      <span className="text-foreground">
-                        Система чатов работает в реальном времени
-                      </span>
-                    </div>
-                  </div>
                 </CardHeader>
                 <CardContent>
-                  <ScrollArea className="h-[500px]">
+                  <ScrollArea className="h-[600px]">
                     <div className="space-y-3">
-                      {chats.filter(c => c.status === 'active' || c.status === 'waiting').map((chat) => (
-                        <div
-                          key={chat.id}
-                          className={`p-4 rounded-lg border ${newChatNotifications.includes(chat.id) ? 'border-destructive bg-destructive/5' : 'border-border bg-card'} hover:shadow-md transition-shadow`}
-                        >
-                          <div className="flex items-center gap-4 mb-3 cursor-pointer" onClick={() => handleOpenChat(chat.id)}>
-                            <Avatar className="w-12 h-12 bg-secondary">
-                              <AvatarFallback>{chat.client.charAt(0)}</AvatarFallback>
-                            </Avatar>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2">
-                                <h4 className="font-semibold text-foreground">{chat.client}</h4>
-                                {newChatNotifications.includes(chat.id) && (
-                                  <Badge variant="destructive" className="text-xs">
-                                    НОВЫЙ
-                                  </Badge>
-                                )}
-                                {chat.status === 'waiting' && (
-                                  <Badge variant="outline" className="text-xs">
-                                    Ожидает
-                                  </Badge>
-                                )}
-                              </div>
-                              <p className="text-xs text-muted-foreground">{chat.phone || chat.email}</p>
-                              <p className="text-sm text-muted-foreground truncate">{chat.lastMessage || 'Нет сообщений'}</p>
-                            </div>
-                            <span className="text-xs text-muted-foreground">{chat.time}</span>
-                          </div>
-
-                          {chat.status === 'waiting' && (
-                            <div className="mb-3">
-                              <Button 
-                                variant="default" 
-                                size="sm" 
-                                className="w-full"
-                                onClick={() => handleAcceptChat(chat.id)}
-                              >
-                                <Icon name="Check" size={14} className="mr-1" />
-                                Принять чат
-                              </Button>
-                            </div>
-                          )}
-
-                          {openChatId === chat.id && (
-                            <div className="mb-3 p-3 border border-border rounded-lg bg-muted/30">
-                              <div className="space-y-2 max-h-60 overflow-y-auto mb-3">
-                                {chat.messages?.length === 0 ? (
-                                  <p className="text-sm text-muted-foreground text-center py-4">Нет сообщений</p>
-                                ) : (
-                                  chat.messages?.map((msg: any) => (
-                                    <div key={msg.id} className={`flex ${msg.sender === 'operator' ? 'justify-end' : 'justify-start'}`}>
-                                      <div className={`max-w-[70%] p-2 rounded-lg ${msg.sender === 'operator' ? 'bg-primary text-primary-foreground' : 'bg-card border border-border'}`}>
-                                        <p className="text-sm">{msg.text}</p>
-                                        <p className="text-xs opacity-70 mt-1">{msg.time}</p>
-                                      </div>
-                                    </div>
-                                  ))
+                      {chats.filter(c => c.status === 'active' || c.status === 'waiting').map((chat) => {
+                        const timeRemaining = getTimeRemaining(chat.extensionRequested ? chat.extensionDeadline : chat.deadline);
+                        const isMyChat = chat.assignedOperator === user.name;
+                        
+                        return (
+                          <div
+                            key={chat.id}
+                            className={`p-4 rounded-lg border ${newChatNotifications.includes(chat.id) ? 'border-destructive bg-destructive/5' : 'border-border bg-card'} hover:shadow-md transition-shadow`}
+                          >
+                            <div className="flex items-center gap-4 mb-3 cursor-pointer" onClick={() => isMyChat && handleOpenChat(chat.id)}>
+                              <Avatar className="w-12 h-12 bg-secondary">
+                                <AvatarFallback>{chat.client.charAt(0)}</AvatarFallback>
+                              </Avatar>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <h4 className="font-semibold text-foreground">{chat.client}</h4>
+                                  {newChatNotifications.includes(chat.id) && (
+                                    <Badge variant="destructive" className="text-xs">
+                                      В ОЧЕРЕДИ
+                                    </Badge>
+                                  )}
+                                  {chat.status === 'waiting' && !newChatNotifications.includes(chat.id) && (
+                                    <Badge variant="outline" className="text-xs">
+                                      Ожидает
+                                    </Badge>
+                                  )}
+                                </div>
+                                <p className="text-xs text-muted-foreground">{chat.phone || chat.email}</p>
+                                {timeRemaining && isMyChat && (
+                                  <div className="flex items-center gap-2 mt-1">
+                                    <Icon name={timeRemaining.minutes < 3 ? 'AlertCircle' : 'Clock'} 
+                                          size={14} 
+                                          className={timeRemaining.minutes < 3 ? 'text-destructive' : 'text-muted-foreground'} />
+                                    <span className={`text-sm font-mono ${timeRemaining.minutes < 3 ? 'text-destructive font-bold' : 'text-muted-foreground'}`}>
+                                      {timeRemaining.minutes}:{String(timeRemaining.seconds).padStart(2, '0')}
+                                    </span>
+                                  </div>
                                 )}
                               </div>
-                              <div className="flex gap-2">
-                                <Input
-                                  placeholder="Введите сообщение..."
-                                  value={messageText}
-                                  onChange={(e) => setMessageText(e.target.value)}
-                                  onKeyDown={(e) => e.key === 'Enter' && handleSendMessage(chat.id)}
-                                />
-                                <Button size="sm" onClick={() => handleSendMessage(chat.id)}>
-                                  <Icon name="Send" size={16} />
+                              <span className="text-xs text-muted-foreground">{chat.time}</span>
+                            </div>
+
+                            {chat.extensionRequested && isMyChat && timeRemaining && !timeRemaining.expired && (
+                              <Alert className="mb-3 bg-destructive/10 border-destructive">
+                                <Icon name="AlertTriangle" size={16} />
+                                <AlertDescription className="flex items-center justify-between">
+                                  <span className="text-sm font-semibold">
+                                    Время истекло! Продлить чат? ({timeRemaining.seconds} сек)
+                                  </span>
+                                  <Button 
+                                    size="sm" 
+                                    variant="destructive"
+                                    onClick={() => handleExtendChat(chat.id)}
+                                  >
+                                    Продлить +15 мин
+                                  </Button>
+                                </AlertDescription>
+                              </Alert>
+                            )}
+
+                            {chat.status === 'waiting' && (
+                              <div className="mb-3">
+                                <Button 
+                                  variant="default" 
+                                  size="sm" 
+                                  className="w-full"
+                                  onClick={() => handleAcceptChat(chat.id)}
+                                  disabled={chats.filter(c => c.assignedOperator === user.name && c.status === 'active').length >= 2}
+                                >
+                                  <Icon name="Check" size={14} className="mr-1" />
+                                  {chats.filter(c => c.assignedOperator === user.name && c.status === 'active').length >= 2 ? 'Лимит чатов (2/2)' : 'Принять чат'}
                                 </Button>
                               </div>
-                            </div>
-                          )}
-                          
-                          {chat.status === 'active' && (
-                            <div className="flex gap-2 flex-wrap">
-                              <Dialog>
-                                <DialogTrigger asChild>
-                                  <Button variant="default" size="sm" className="bg-secondary hover:bg-secondary/90" onClick={() => setSelectedChat(chat.id)}>
-                                    <Icon name="CheckCircle" size={14} className="mr-1" />
-                                    Завершить
-                                  </Button>
-                                </DialogTrigger>
-                                <DialogContent>
-                                  <DialogHeader>
-                                    <DialogTitle>Завершить чат</DialogTitle>
-                                    <DialogDescription>Укажите причину закрытия обращения</DialogDescription>
-                                  </DialogHeader>
-                                  <div className="space-y-4">
-                                    <Select value={closeReason} onValueChange={setCloseReason}>
-                                      <SelectTrigger>
-                                        <SelectValue placeholder="Выберите причину" />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        <SelectItem value="resolved">Решено</SelectItem>
-                                        <SelectItem value="no_response">Нет ответа клиента</SelectItem>
-                                        <SelectItem value="spam">Спам</SelectItem>
-                                        <SelectItem value="duplicate">Дубликат</SelectItem>
-                                        <SelectItem value="other">Другое</SelectItem>
-                                      </SelectContent>
-                                    </Select>
-                                    <Button className="w-full" onClick={() => handleCloseChat(chat.id, closeReason)}>
-                                      Подтвердить закрытие
-                                    </Button>
-                                  </div>
-                                </DialogContent>
-                              </Dialog>
+                            )}
 
-                              <Dialog>
-                                <DialogTrigger asChild>
-                                  <Button variant="outline" size="sm" onClick={() => setSelectedChat(chat.id)}>
-                                    <Icon name="Clock" size={14} className="mr-1" />
-                                    Отложить
+                            {openChatId === chat.id && isMyChat && (
+                              <div className="mb-3 p-3 border border-border rounded-lg bg-muted/30">
+                                <div className="space-y-2 max-h-60 overflow-y-auto mb-3">
+                                  {chat.messages?.length === 0 ? (
+                                    <p className="text-sm text-muted-foreground text-center py-4">Нет сообщений</p>
+                                  ) : (
+                                    chat.messages?.map((msg: any) => (
+                                      <div key={msg.id} className={`flex ${msg.sender === 'operator' ? 'justify-end' : 'justify-start'}`}>
+                                        <div className={`max-w-[70%] p-2 rounded-lg ${msg.sender === 'operator' ? 'bg-primary text-primary-foreground' : 'bg-card border border-border'}`}>
+                                          <p className="text-sm">{msg.text}</p>
+                                          <p className="text-xs opacity-70 mt-1">{msg.time}</p>
+                                        </div>
+                                      </div>
+                                    ))
+                                  )}
+                                </div>
+                                <div className="flex gap-2">
+                                  <Input
+                                    placeholder="Введите сообщение..."
+                                    value={messageText}
+                                    onChange={(e) => setMessageText(e.target.value)}
+                                    onKeyDown={(e) => e.key === 'Enter' && handleSendMessage(chat.id)}
+                                  />
+                                  <Button size="sm" onClick={() => handleSendMessage(chat.id)}>
+                                    <Icon name="Send" size={16} />
                                   </Button>
-                                </DialogTrigger>
-                                <DialogContent>
-                                  <DialogHeader>
-                                    <DialogTitle>Отложить чат</DialogTitle>
-                                    <DialogDescription>Выберите дату и время возврата чата</DialogDescription>
-                                  </DialogHeader>
-                                  <div className="space-y-4">
-                                    <div>
-                                      <Label>Дата</Label>
-                                      <Input type="date" value={postponeDate} onChange={(e) => setPostponeDate(e.target.value)} />
-                                    </div>
-                                    <div>
-                                      <Label>Время</Label>
-                                      <Input type="time" value={postponeTime} onChange={(e) => setPostponeTime(e.target.value)} />
-                                    </div>
-                                    <Button className="w-full" onClick={() => handlePostponeChat(chat.id, postponeDate, postponeTime)}>
-                                      Отложить чат
+                                </div>
+                              </div>
+                            )}
+                            
+                            {chat.status === 'active' && isMyChat && (
+                              <div className="flex gap-2 flex-wrap">
+                                <Dialog>
+                                  <DialogTrigger asChild>
+                                    <Button variant="default" size="sm" className="bg-secondary hover:bg-secondary/90" onClick={() => setSelectedChat(chat.id)}>
+                                      <Icon name="CheckCircle" size={14} className="mr-1" />
+                                      Завершить
                                     </Button>
-                                  </div>
-                                </DialogContent>
-                              </Dialog>
+                                  </DialogTrigger>
+                                  <DialogContent>
+                                    <DialogHeader>
+                                      <DialogTitle>Завершить чат</DialogTitle>
+                                      <DialogDescription>Укажите причину закрытия обращения</DialogDescription>
+                                    </DialogHeader>
+                                    <div className="space-y-4">
+                                      <Select value={closeReason} onValueChange={setCloseReason}>
+                                        <SelectTrigger>
+                                          <SelectValue placeholder="Выберите причину" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          <SelectItem value="resolved">Решено</SelectItem>
+                                          <SelectItem value="no_response">Нет ответа клиента</SelectItem>
+                                          <SelectItem value="spam">Спам</SelectItem>
+                                          <SelectItem value="duplicate">Дубликат</SelectItem>
+                                          <SelectItem value="other">Другое</SelectItem>
+                                        </SelectContent>
+                                      </Select>
+                                      <Button className="w-full" onClick={() => handleCloseChat(chat.id, closeReason)}>
+                                        Подтвердить закрытие
+                                      </Button>
+                                    </div>
+                                  </DialogContent>
+                                </Dialog>
 
-                              <Button variant="outline" size="sm" onClick={() => handleEscalateChat(chat.id)}>
-                                <Icon name="AlertTriangle" size={14} className="mr-1" />
-                                Эскалировать
-                              </Button>
-                            </div>
-                          )}
-                        </div>
-                      ))}
+                                <Dialog>
+                                  <DialogTrigger asChild>
+                                    <Button variant="outline" size="sm" onClick={() => setSelectedChat(chat.id)}>
+                                      <Icon name="Clock" size={14} className="mr-1" />
+                                      Отложить
+                                    </Button>
+                                  </DialogTrigger>
+                                  <DialogContent>
+                                    <DialogHeader>
+                                      <DialogTitle>Отложить чат</DialogTitle>
+                                      <DialogDescription>Выберите дату и время возврата чата</DialogDescription>
+                                    </DialogHeader>
+                                    <div className="space-y-4">
+                                      <div>
+                                        <Label>Дата</Label>
+                                        <Input type="date" value={postponeDate} onChange={(e) => setPostponeDate(e.target.value)} />
+                                      </div>
+                                      <div>
+                                        <Label>Время</Label>
+                                        <Input type="time" value={postponeTime} onChange={(e) => setPostponeTime(e.target.value)} />
+                                      </div>
+                                      <Button className="w-full" onClick={() => handlePostponeChat(chat.id, postponeDate, postponeTime)}>
+                                        Отложить чат
+                                      </Button>
+                                    </div>
+                                  </DialogContent>
+                                </Dialog>
+
+                                <Button variant="outline" size="sm" onClick={() => handleEscalateChat(chat.id)}>
+                                  <Icon name="AlertTriangle" size={14} className="mr-1" />
+                                  Эскалировать
+                                </Button>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
                       {chats.filter(c => c.status === 'active' || c.status === 'waiting').length === 0 && (
                         <div className="text-center py-12 text-muted-foreground">
                           <Icon name="MessageSquare" size={48} className="mx-auto mb-3 opacity-30" />
@@ -771,139 +817,102 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
             </Card>
           )}
 
-          {hasAccess('myScores') && activeTab === 'myScores' && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Icon name="BarChart3" size={20} />
-                  Мои оценки ОКК
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {mockQCScores.map((score, idx) => (
-                    <div key={idx} className="p-4 rounded-lg border border-border bg-card">
-                      <div className="flex items-center justify-between mb-2">
-                        <div>
-                          <h4 className="font-semibold">{score.category}</h4>
-                          <p className="text-xs text-muted-foreground">{score.date}</p>
-                        </div>
-                        <div className="text-right">
-                          <div className="text-2xl font-bold text-secondary">{score.score}%</div>
-                        </div>
-                      </div>
-                      <Progress value={score.score} className="h-2" />
-                      <p className="text-sm text-muted-foreground mt-2">{score.comment}</p>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {hasAccess('results') && activeTab === 'results' && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Icon name="TrendingUp" size={20} />
-                  Мои результаты
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid gap-4 md:grid-cols-3">
-                  {mockResults.map((result, idx) => (
-                    <div key={idx} className="p-4 rounded-lg border border-border bg-card">
-                      <p className="text-xs text-muted-foreground mb-1">{result.metric}</p>
-                      <div className="text-2xl font-bold text-foreground">{result.value}</div>
-                      <div className="flex items-center gap-2 mt-2">
-                        <Progress value={(result.value / result.target) * 100} className="h-2 flex-1" />
-                        <span className="text-xs text-muted-foreground">{result.target}</span>
-                      </div>
-                      <p className="text-xs text-muted-foreground mt-1">{result.period}</p>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {hasAccess('jira') && activeTab === 'jira' && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Icon name="ListTodo" size={20} />
-                  Jira задачи
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  {jiraTasks.map((task) => (
-                    <div key={task.id} className="p-4 rounded-lg border border-border bg-card">
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          <code className="text-xs bg-muted px-2 py-1 rounded">{task.id}</code>
-                          <h4 className="font-semibold">{task.title}</h4>
-                        </div>
-                        <Badge className={getPriorityColor(task.priority)}>
-                          {getPriorityLabel(task.priority)}
-                        </Badge>
-                      </div>
-                      <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                        <span>Статус: {task.status}</span>
-                        <span>Исполнитель: {task.assignee}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
           {hasAccess('knowledge') && activeTab === 'knowledge' && (
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Icon name="BookOpen" size={20} />
-                  База знаний
+                <CardTitle className="flex items-center gap-2 justify-between">
+                  <div className="flex items-center gap-2">
+                    <Icon name="BookOpen" size={20} />
+                    База знаний
+                  </div>
+                  {hasAccess('knowledgeEdit') && (
+                    <Button 
+                      size="sm"
+                      onClick={() => {
+                        setCurrentArticle({ title: '', category: '', content: '' });
+                        setIsEditingArticle(true);
+                      }}
+                    >
+                      <Icon name="Plus" size={16} className="mr-1" />
+                      Создать статью
+                    </Button>
+                  )}
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-3">
-                  {mockKnowledge.map((article) => (
-                    <div key={article.id} className="p-4 rounded-lg border border-border bg-card hover:shadow-md transition-shadow cursor-pointer">
-                      <h4 className="font-semibold mb-1">{article.title}</h4>
-                      <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                        <span>{article.category}</span>
-                        <span>Просмотры: {article.views}</span>
-                      </div>
+                {isEditingArticle ? (
+                  <div className="space-y-4">
+                    <div>
+                      <Label>Название</Label>
+                      <Input 
+                        value={currentArticle?.title || ''} 
+                        onChange={(e) => setCurrentArticle({...currentArticle, title: e.target.value})}
+                      />
                     </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {hasAccess('news') && activeTab === 'news' && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Icon name="Newspaper" size={20} />
-                  Новости компании
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {mockNews.map((news) => (
-                    <div key={news.id} className="p-4 rounded-lg border border-border bg-card">
-                      <h4 className="font-semibold mb-1">{news.title}</h4>
-                      <p className="text-sm text-muted-foreground mb-2">{news.text}</p>
-                      <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                        <span>{news.date}</span>
-                        <span>{news.author}</span>
-                      </div>
+                    <div>
+                      <Label>Категория</Label>
+                      <Input 
+                        value={currentArticle?.category || ''} 
+                        onChange={(e) => setCurrentArticle({...currentArticle, category: e.target.value})}
+                      />
                     </div>
-                  ))}
-                </div>
+                    <div>
+                      <Label>Содержание</Label>
+                      <Textarea 
+                        rows={10}
+                        value={currentArticle?.content || ''} 
+                        onChange={(e) => setCurrentArticle({...currentArticle, content: e.target.value})}
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <Button onClick={handleSaveArticle}>
+                        <Icon name="Save" size={16} className="mr-1" />
+                        Сохранить
+                      </Button>
+                      <Button variant="outline" onClick={() => {
+                        setIsEditingArticle(false);
+                        setCurrentArticle(null);
+                      }}>
+                        Отмена
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {knowledgeArticles.map((article) => (
+                      <div key={article.id} className="p-4 rounded-lg border border-border bg-card hover:shadow-md transition-shadow">
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <h4 className="font-semibold mb-1">{article.title}</h4>
+                            <div className="flex items-center gap-4 text-xs text-muted-foreground mb-2">
+                              <span>{article.category}</span>
+                              <span>Просмотры: {article.views}</span>
+                            </div>
+                            <p className="text-sm text-muted-foreground whitespace-pre-wrap">{article.content}</p>
+                          </div>
+                          {hasAccess('knowledgeEdit') && (
+                            <Button 
+                              variant="ghost" 
+                              size="sm"
+                              onClick={() => {
+                                setCurrentArticle(article);
+                                setIsEditingArticle(true);
+                              }}
+                            >
+                              <Icon name="Edit" size={16} />
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                    {knowledgeArticles.length === 0 && (
+                      <div className="text-center py-12 text-muted-foreground">
+                        <Icon name="BookOpen" size={48} className="mx-auto mb-3 opacity-30" />
+                        <p>Нет статей в базе знаний</p>
+                      </div>
+                    )}
+                  </div>
+                )}
               </CardContent>
             </Card>
           )}
