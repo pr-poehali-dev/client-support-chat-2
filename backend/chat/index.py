@@ -241,6 +241,79 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     'isBase64Encoded': False,
                     'body': json.dumps({'articles': result})
                 }
+            
+            elif action == 'closedChats':
+                cur.execute('''
+                    SELECT c.id, c.status, c.assigned_operator, c.created_at, c.updated_at,
+                           c.client_name, c.email, c.phone, c.ip_address,
+                           r.id as rating_id, r.score as rating_score
+                    FROM chats c
+                    LEFT JOIN ratings r ON c.id = r.chat_id
+                    WHERE c.status = 'closed'
+                    ORDER BY c.updated_at DESC
+                ''')
+                chats = cur.fetchall()
+                
+                result = []
+                for chat in chats:
+                    result.append({
+                        'id': chat['id'],
+                        'status': chat['status'],
+                        'assignedOperator': chat['assigned_operator'],
+                        'clientName': chat['client_name'] or 'Клиент',
+                        'email': chat['email'] or '',
+                        'phone': chat['phone'] or '',
+                        'ipAddress': chat['ip_address'] or '',
+                        'createdAt': chat['created_at'].isoformat() if chat['created_at'] else None,
+                        'updatedAt': chat['updated_at'].isoformat() if chat['updated_at'] else None,
+                        'hasRating': chat['rating_id'] is not None,
+                        'ratingScore': chat['rating_score']
+                    })
+                
+                return {
+                    'statusCode': 200,
+                    'headers': headers,
+                    'isBase64Encoded': False,
+                    'body': json.dumps({'chats': result})
+                }
+            
+            elif action == 'ratings':
+                operator_name = event.get('queryStringParameters', {}).get('operatorName', '')
+                
+                if not operator_name:
+                    return {
+                        'statusCode': 400,
+                        'headers': headers,
+                        'isBase64Encoded': False,
+                        'body': json.dumps({'error': 'operatorName required'})
+                    }
+                
+                cur.execute('''
+                    SELECT id, chat_id, operator_name, rated_by, score, comment, created_at
+                    FROM ratings
+                    WHERE operator_name = %s
+                    ORDER BY created_at DESC
+                ''', (operator_name,))
+                ratings = cur.fetchall()
+                
+                result = []
+                for rating in ratings:
+                    result.append({
+                        'id': rating['id'],
+                        'chatId': rating['chat_id'],
+                        'operatorName': rating['operator_name'],
+                        'ratedBy': rating['rated_by'],
+                        'score': rating['score'],
+                        'comment': rating['comment'] or '',
+                        'createdAt': rating['created_at'].isoformat() if rating['created_at'] else None
+                    })
+                
+                return {
+                    'statusCode': 200,
+                    'headers': headers,
+                    'isBase64Encoded': False,
+                    'body': json.dumps({'ratings': result})
+                }
         
         elif method == 'POST':
             body_data = json.loads(event.get('body', '{}'))
@@ -447,6 +520,58 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     'headers': headers,
                     'isBase64Encoded': False,
                     'body': json.dumps({'articleId': article_id})
+                }
+            
+            elif action == 'createRating':
+                chat_id = body_data.get('chatId')
+                operator_name = body_data.get('operatorName', '')
+                rated_by = body_data.get('ratedBy', '')
+                score = body_data.get('score')
+                comment = body_data.get('comment', '')
+                
+                if not all([chat_id, operator_name, rated_by, score]):
+                    return {
+                        'statusCode': 400,
+                        'headers': headers,
+                        'isBase64Encoded': False,
+                        'body': json.dumps({'error': 'chatId, operatorName, ratedBy, score required'})
+                    }
+                
+                if score < 1 or score > 5:
+                    return {
+                        'statusCode': 400,
+                        'headers': headers,
+                        'isBase64Encoded': False,
+                        'body': json.dumps({'error': 'score must be between 1 and 5'})
+                    }
+                
+                cur.execute('''
+                    SELECT id FROM ratings WHERE chat_id = %s
+                ''', (chat_id,))
+                existing_rating = cur.fetchone()
+                
+                if existing_rating:
+                    return {
+                        'statusCode': 400,
+                        'headers': headers,
+                        'isBase64Encoded': False,
+                        'body': json.dumps({'error': 'Chat already rated'})
+                    }
+                
+                cur.execute('''
+                    INSERT INTO ratings (chat_id, operator_name, rated_by, score, comment)
+                    VALUES (%s, %s, %s, %s, %s)
+                    RETURNING id
+                ''', (chat_id, operator_name, rated_by, score, comment))
+                rating_id = cur.fetchone()['id']
+                
+                conn.commit()
+                
+                return {
+                    'statusCode': 200,
+                    'headers': headers,
+                    'isBase64Encoded': False,
+                    'body': json.dumps({'ratingId': rating_id})
                 }
         
         elif method == 'PUT':

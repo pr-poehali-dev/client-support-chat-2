@@ -45,6 +45,11 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
   const [shifts, setShifts] = useState<any[]>([]);
   const [isEditingShift, setIsEditingShift] = useState(false);
   const [currentShift, setCurrentShift] = useState<any>(null);
+  const [closedChats, setClosedChats] = useState<any[]>([]);
+  const [ratings, setRatings] = useState<any[]>([]);
+  const [ratingScore, setRatingScore] = useState<number>(5);
+  const [ratingComment, setRatingComment] = useState('');
+  const [selectedRatingChat, setSelectedRatingChat] = useState<number | null>(null);
 
   const getRoleName = (role: string) => {
     switch (role) {
@@ -73,6 +78,12 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
       knowledgeEdit: ['admin'],
     };
     return accessMatrix[section as keyof typeof accessMatrix]?.includes(user.role) || false;
+  };
+
+  const getAverageScore = () => {
+    if (ratings.length === 0) return 0;
+    const sum = ratings.reduce((acc, r) => acc + r.score, 0);
+    return (sum / ratings.length).toFixed(1);
   };
 
   const getTimeRemaining = (deadline: string | null) => {
@@ -488,6 +499,71 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
     }
   };
 
+  const handleSubmitRating = async (chatId: number, operatorName: string) => {
+    if (!ratingScore || ratingScore < 1 || ratingScore > 5) return;
+    
+    try {
+      await fetch(CHAT_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'createRating',
+          chatId,
+          operatorName,
+          ratedBy: user.name,
+          score: ratingScore,
+          comment: ratingComment
+        }),
+      });
+
+      setRatingScore(5);
+      setRatingComment('');
+      setSelectedRatingChat(null);
+
+      const response = await fetch(`${CHAT_API_URL}?action=closedChats`);
+      const data = await response.json();
+      setClosedChats(data.chats);
+    } catch (error) {
+      console.error('Failed to submit rating:', error);
+    }
+  };
+
+  useEffect(() => {
+    if (!hasAccess('qcPortal')) return;
+    
+    const fetchClosedChats = async () => {
+      try {
+        const response = await fetch(`${CHAT_API_URL}?action=closedChats`);
+        const data = await response.json();
+        setClosedChats(data.chats);
+      } catch (error) {
+        console.error('Failed to fetch closed chats:', error);
+      }
+    };
+
+    if (activeTab === 'qcPortal') {
+      fetchClosedChats();
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (!hasAccess('myScores')) return;
+    
+    const fetchRatings = async () => {
+      try {
+        const response = await fetch(`${CHAT_API_URL}?action=ratings&operatorName=${user.name}`);
+        const data = await response.json();
+        setRatings(data.ratings);
+      } catch (error) {
+        console.error('Failed to fetch ratings:', error);
+      }
+    };
+
+    if (activeTab === 'myScores') {
+      fetchRatings();
+    }
+  }, [activeTab, user.name]);
+
   const getStatusName = (status: string) => {
     const statusMap: Record<string, string> = {
       online: 'На линии',
@@ -516,6 +592,12 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
 
   if (hasAccess('chats')) {
     availableTabs.push({ id: 'chats', icon: 'MessageSquare', label: 'Мои чаты' });
+  }
+  if (hasAccess('myScores')) {
+    availableTabs.push({ id: 'myScores', icon: 'Star', label: 'Мои оценки' });
+  }
+  if (hasAccess('qcPortal')) {
+    availableTabs.push({ id: 'qcPortal', icon: 'ClipboardCheck', label: 'QC Портал' });
   }
   if (hasAccess('allChats')) {
     availableTabs.push({ id: 'allChats', icon: 'MessagesSquare', label: 'Все чаты' });
@@ -1212,6 +1294,191 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
                       <div className="text-center py-12 text-muted-foreground">
                         <Icon name="Database" size={48} className="mx-auto mb-3 opacity-30" />
                         <p>Нет данных о клиентах</p>
+                      </div>
+                    )}
+                  </div>
+                </ScrollArea>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {hasAccess('qcPortal') && activeTab === 'qcPortal' && (
+          <div className="flex-1 p-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Icon name="ClipboardCheck" size={20} />
+                  QC Портал - Закрытые тикеты
+                </CardTitle>
+                <CardDescription>
+                  Оценка качества обработки обращений
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ScrollArea className="h-[600px]">
+                  <div className="space-y-3">
+                    {closedChats.map((chat: any) => (
+                      <div key={chat.id} className="p-4 rounded-lg border border-border bg-card hover:shadow-md transition-shadow">
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-3 mb-2">
+                              <Avatar className="w-10 h-10 bg-secondary">
+                                <AvatarFallback>{chat.clientName?.charAt(0) || 'К'}</AvatarFallback>
+                              </Avatar>
+                              <div>
+                                <h4 className="font-semibold">{chat.clientName || 'Клиент'}</h4>
+                                <p className="text-xs text-muted-foreground">ID тикета: {chat.id}</p>
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3 text-sm mb-3">
+                              <div>
+                                <Label className="text-xs text-muted-foreground">Оператор</Label>
+                                <p className="font-medium">{chat.assignedOperator || 'Не назначен'}</p>
+                              </div>
+                              <div>
+                                <Label className="text-xs text-muted-foreground">Закрыт</Label>
+                                <p>{new Date(chat.updatedAt).toLocaleString('ru-RU')}</p>
+                              </div>
+                              <div>
+                                <Label className="text-xs text-muted-foreground">Телефон</Label>
+                                <p>{chat.phone || 'Не указан'}</p>
+                              </div>
+                              <div>
+                                <Label className="text-xs text-muted-foreground">Email</Label>
+                                <p>{chat.email || 'Не указан'}</p>
+                              </div>
+                            </div>
+                            {chat.hasRating ? (
+                              <Badge variant="outline" className="bg-green-500/10 text-green-600">
+                                <Icon name="CheckCircle" size={14} className="mr-1" />
+                                Оценен: {chat.ratingScore}/5
+                              </Badge>
+                            ) : (
+                              <Dialog open={selectedRatingChat === chat.id} onOpenChange={(open) => !open && setSelectedRatingChat(null)}>
+                                <DialogTrigger asChild>
+                                  <Button 
+                                    size="sm" 
+                                    variant="default"
+                                    onClick={() => setSelectedRatingChat(chat.id)}
+                                  >
+                                    <Icon name="Star" size={14} className="mr-1" />
+                                    Оценить тикет
+                                  </Button>
+                                </DialogTrigger>
+                                <DialogContent>
+                                  <DialogHeader>
+                                    <DialogTitle>Оценка тикета #{chat.id}</DialogTitle>
+                                    <DialogDescription>
+                                      Оцените качество обработки обращения оператором {chat.assignedOperator}
+                                    </DialogDescription>
+                                  </DialogHeader>
+                                  <div className="space-y-4">
+                                    <div>
+                                      <Label>Оценка (1-5)</Label>
+                                      <Select value={ratingScore.toString()} onValueChange={(val) => setRatingScore(parseInt(val))}>
+                                        <SelectTrigger>
+                                          <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          <SelectItem value="5">5 - Отлично</SelectItem>
+                                          <SelectItem value="4">4 - Хорошо</SelectItem>
+                                          <SelectItem value="3">3 - Удовлетворительно</SelectItem>
+                                          <SelectItem value="2">2 - Плохо</SelectItem>
+                                          <SelectItem value="1">1 - Очень плохо</SelectItem>
+                                        </SelectContent>
+                                      </Select>
+                                    </div>
+                                    <div>
+                                      <Label>Комментарий (необязательно)</Label>
+                                      <Textarea 
+                                        rows={4}
+                                        placeholder="Опишите причину оценки..."
+                                        value={ratingComment}
+                                        onChange={(e) => setRatingComment(e.target.value)}
+                                      />
+                                    </div>
+                                    <Button 
+                                      className="w-full" 
+                                      onClick={() => handleSubmitRating(chat.id, chat.assignedOperator)}
+                                    >
+                                      Отправить оценку
+                                    </Button>
+                                  </div>
+                                </DialogContent>
+                              </Dialog>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                    {closedChats.length === 0 && (
+                      <div className="text-center py-12 text-muted-foreground">
+                        <Icon name="ClipboardCheck" size={48} className="mx-auto mb-3 opacity-30" />
+                        <p>Нет закрытых тикетов</p>
+                      </div>
+                    )}
+                  </div>
+                </ScrollArea>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {hasAccess('myScores') && activeTab === 'myScores' && (
+          <div className="flex-1 p-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 justify-between">
+                  <div className="flex items-center gap-2">
+                    <Icon name="Star" size={20} />
+                    Мои оценки
+                  </div>
+                  {ratings.length > 0 && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-muted-foreground">Средний балл:</span>
+                      <Badge variant="default" className="text-lg">
+                        <Icon name="Star" size={16} className="mr-1" />
+                        {getAverageScore()}/5
+                      </Badge>
+                    </div>
+                  )}
+                </CardTitle>
+                <CardDescription>
+                  Оценки качества вашей работы от сотрудников ОКК
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ScrollArea className="h-[600px]">
+                  <div className="space-y-3">
+                    {ratings.map((rating: any) => (
+                      <div key={rating.id} className="p-4 rounded-lg border border-border bg-card">
+                        <div className="flex items-start justify-between mb-2">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <h4 className="font-semibold">Тикет #{rating.chatId}</h4>
+                              <Badge variant={rating.score >= 4 ? 'default' : rating.score >= 3 ? 'secondary' : 'destructive'}>
+                                <Icon name="Star" size={14} className="mr-1" />
+                                {rating.score}/5
+                              </Badge>
+                            </div>
+                            <p className="text-xs text-muted-foreground">
+                              Оценил: {rating.ratedBy} • {new Date(rating.createdAt).toLocaleString('ru-RU')}
+                            </p>
+                          </div>
+                        </div>
+                        {rating.comment && (
+                          <div className="mt-3 p-3 bg-muted rounded-lg">
+                            <Label className="text-xs text-muted-foreground">Комментарий:</Label>
+                            <p className="text-sm mt-1">{rating.comment}</p>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                    {ratings.length === 0 && (
+                      <div className="text-center py-12 text-muted-foreground">
+                        <Icon name="Star" size={48} className="mx-auto mb-3 opacity-30" />
+                        <p>У вас пока нет оценок</p>
                       </div>
                     )}
                   </div>
