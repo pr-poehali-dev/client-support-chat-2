@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -31,6 +31,12 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
   const [postponeTime, setPostponeTime] = useState('');
   const [transferOperator, setTransferOperator] = useState('');
   const [closeReason, setCloseReason] = useState('');
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [chats, setChats] = useState([
+    { id: 1, client: 'Иван Петров', phone: '+7 (999) 123-45-67', lastMessage: 'Здравствуйте, нужна помощь', time: '14:23', unread: 2, status: 'active' },
+    { id: 2, client: 'Мария Сидорова', phone: '+7 (999) 234-56-78', lastMessage: 'Спасибо за помощь!', time: '13:45', unread: 0, status: 'closed' },
+    { id: 3, client: 'Алексей Козлов', phone: '+7 (999) 345-67-89', lastMessage: 'Когда будет ответ?', time: '12:10', unread: 1, status: 'active' },
+  ]);
 
   const getRoleName = (role: string) => {
     switch (role) {
@@ -62,11 +68,59 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
     return accessMatrix[section as keyof typeof accessMatrix]?.includes(user.role) || false;
   };
 
-  const mockChats = [
-    { id: 1, client: 'Иван Петров', phone: '+7 (999) 123-45-67', lastMessage: 'Здравствуйте, нужна помощь', time: '14:23', unread: 2, status: 'active' },
-    { id: 2, client: 'Мария Сидорова', phone: '+7 (999) 234-56-78', lastMessage: 'Спасибо за помощь!', time: '13:45', unread: 0, status: 'closed' },
-    { id: 3, client: 'Алексей Козлов', phone: '+7 (999) 345-67-89', lastMessage: 'Когда будет ответ?', time: '12:10', unread: 1, status: 'active' },
-  ];
+  useEffect(() => {
+    if (operatorStatus === 'online' && (user.role === 'operator' || user.role === 'okk')) {
+      const interval = setInterval(() => {
+        const shouldReceiveNewChat = Math.random() > 0.7;
+        if (shouldReceiveNewChat) {
+          const newChatId = Date.now();
+          const clients = ['Дмитрий Новиков', 'Елена Васильева', 'Сергей Морозов', 'Ольга Кузнецова', 'Павел Соколов'];
+          const messages = ['Добрый день!', 'Помогите разобраться', 'У меня вопрос', 'Срочно нужна помощь', 'Не получается оформить заказ'];
+          const newChat = {
+            id: newChatId,
+            client: clients[Math.floor(Math.random() * clients.length)],
+            phone: `+7 (999) ${Math.floor(100 + Math.random() * 900)}-${Math.floor(10 + Math.random() * 90)}-${Math.floor(10 + Math.random() * 90)}`,
+            lastMessage: messages[Math.floor(Math.random() * messages.length)],
+            time: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }),
+            unread: 1,
+            status: 'active'
+          };
+          setChats(prev => [newChat, ...prev]);
+        }
+      }, 15000);
+      return () => clearInterval(interval);
+    }
+  }, [operatorStatus, user.role]);
+
+  const handleCloseChat = (chatId: number, reason: string) => {
+    setChats(prev => prev.map(chat => 
+      chat.id === chatId ? { ...chat, status: 'closed' } : chat
+    ));
+    setSelectedChat(null);
+    setCloseReason('');
+  };
+
+  const handlePostponeChat = (chatId: number, date: string, time: string) => {
+    setChats(prev => prev.map(chat => 
+      chat.id === chatId ? { ...chat, status: 'postponed' } : chat
+    ));
+    setSelectedChat(null);
+    setPostponeDate('');
+    setPostponeTime('');
+  };
+
+  const handleTransferChat = (chatId: number, operatorId: string) => {
+    setChats(prev => prev.filter(chat => chat.id !== chatId));
+    setSelectedChat(null);
+    setTransferOperator('');
+  };
+
+  const handleEscalateChat = (chatId: number) => {
+    setChats(prev => prev.map(chat => 
+      chat.id === chatId ? { ...chat, status: 'escalated' } : chat
+    ));
+    setSelectedChat(null);
+  };
 
   const mockQCScores = [
     { date: '2024-01-15', category: 'Качество обслуживания', score: 95, comment: 'Отличная работа', operator: 'Текущий оператор' },
@@ -150,85 +204,105 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
   if (hasAccess('corporateChats')) availableTabs.push({ value: 'corporateChats', label: 'Корп. чаты', icon: 'Building2' });
 
   return (
-    <div className="min-h-screen bg-background dark">
-      <header className="bg-card border-b border-border sticky top-0 z-50">
-        <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-3">
-              <Avatar className="w-10 h-10 bg-primary">
-                <AvatarFallback className="text-primary-foreground font-semibold">
-                  {user.name.charAt(0).toUpperCase()}
-                </AvatarFallback>
-              </Avatar>
-              <div>
-                <h2 className="font-semibold text-foreground">{user.name}</h2>
-                <p className="text-xs text-muted-foreground">{getRoleName(user.role)}</p>
-              </div>
-            </div>
-            {(user.role === 'operator' || user.role === 'okk') && (
-              <Select value={operatorStatus} onValueChange={setOperatorStatus}>
-                <SelectTrigger className="w-[160px] h-9">
-                  <div className="flex items-center gap-2">
-                    <div className={`w-2 h-2 rounded-full ${getStatusColor(operatorStatus)}`} />
-                    <SelectValue />
-                  </div>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="online">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full bg-secondary" />
-                      На линии
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="break">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full bg-yellow-500" />
-                      Перерыв
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="lunch">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full bg-orange-500" />
-                      Обед
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="training">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full bg-blue-500" />
-                      Обучение
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="dnd">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full bg-destructive" />
-                      Не беспокоить
-                    </div>
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            )}
-          </div>
-          <Button variant="ghost" size="icon" onClick={onLogout}>
-            <Icon name="LogOut" size={20} />
+    <div className="min-h-screen bg-background dark flex">
+      <aside className={`${sidebarOpen ? 'w-64' : 'w-16'} bg-card border-r border-border transition-all duration-300 flex flex-col`}>
+        <div className="p-4 border-b border-border flex items-center justify-between">
+          {sidebarOpen && <h1 className="font-bold text-lg text-foreground">КЦ Система</h1>}
+          <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(!sidebarOpen)}>
+            <Icon name={sidebarOpen ? "PanelLeftClose" : "PanelLeftOpen"} size={20} />
           </Button>
         </div>
-      </header>
+        
+        <ScrollArea className="flex-1 p-2">
+          <div className="space-y-1">
+            {availableTabs.map((tab) => (
+              <Button
+                key={tab.value}
+                variant={activeTab === tab.value ? "secondary" : "ghost"}
+                className={`w-full justify-start gap-2 ${!sidebarOpen && 'justify-center'}`}
+                onClick={() => setActiveTab(tab.value)}
+              >
+                <Icon name={tab.icon as any} size={18} />
+                {sidebarOpen && <span>{tab.label}</span>}
+              </Button>
+            ))}
+          </div>
+        </ScrollArea>
 
-      <div className="container mx-auto px-4 py-6">
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <ScrollArea className="w-full">
-            <TabsList className={`grid w-full mb-6`} style={{ gridTemplateColumns: `repeat(${availableTabs.length}, minmax(0, 1fr))` }}>
-              {availableTabs.map((tab) => (
-                <TabsTrigger key={tab.value} value={tab.value} className="gap-2">
-                  <Icon name={tab.icon as any} size={16} />
-                  <span className="hidden sm:inline">{tab.label}</span>
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </ScrollArea>
+        <div className="p-4 border-t border-border space-y-3">
+          {(user.role === 'operator' || user.role === 'okk') && sidebarOpen && (
+            <Select value={operatorStatus} onValueChange={setOperatorStatus}>
+              <SelectTrigger className="w-full">
+                <div className="flex items-center gap-2">
+                  <div className={`w-2 h-2 rounded-full ${getStatusColor(operatorStatus)}`} />
+                  <SelectValue />
+                </div>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="online">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-secondary" />
+                    На линии
+                  </div>
+                </SelectItem>
+                <SelectItem value="break">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-yellow-500" />
+                    Перерыв
+                  </div>
+                </SelectItem>
+                <SelectItem value="lunch">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-orange-500" />
+                    Обед
+                  </div>
+                </SelectItem>
+                <SelectItem value="training">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-blue-500" />
+                    Обучение
+                  </div>
+                </SelectItem>
+                <SelectItem value="dnd">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-destructive" />
+                    Не беспокоить
+                  </div>
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          )}
+          
+          <div className={`flex items-center gap-3 ${!sidebarOpen && 'flex-col'}`}>
+            <Avatar className="w-10 h-10 bg-primary">
+              <AvatarFallback className="text-primary-foreground font-semibold">
+                {user.name.charAt(0).toUpperCase()}
+              </AvatarFallback>
+            </Avatar>
+            {sidebarOpen && (
+              <div className="flex-1 min-w-0">
+                <h2 className="font-semibold text-foreground text-sm truncate">{user.name}</h2>
+                <p className="text-xs text-muted-foreground truncate">{getRoleName(user.role)}</p>
+              </div>
+            )}
+          </div>
+          
+          <Button 
+            variant="ghost" 
+            className={`w-full gap-2 ${!sidebarOpen && 'justify-center'}`}
+            onClick={onLogout}
+          >
+            <Icon name="LogOut" size={18} />
+            {sidebarOpen && <span>Выход</span>}
+          </Button>
+        </div>
+      </aside>
 
-          {hasAccess('chats') && (
-            <TabsContent value="chats">
+      <main className="flex-1 overflow-auto">
+        <div className="container mx-auto px-4 py-6">
+
+          {hasAccess('chats') && activeTab === 'chats' && (
+            <div>
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
@@ -250,7 +324,7 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
                 <CardContent>
                   <ScrollArea className="h-[500px]">
                     <div className="space-y-3">
-                      {mockChats.filter(c => c.status === 'active').map((chat) => (
+                      {chats.filter(c => c.status === 'active').map((chat) => (
                         <div
                           key={chat.id}
                           className="p-4 rounded-lg border border-border bg-card hover:shadow-md transition-shadow"
@@ -275,22 +349,100 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
                           </div>
                           
                           <div className="flex gap-2 flex-wrap">
-                            <Button variant="default" size="sm" className="bg-secondary hover:bg-secondary/90">
-                              <Icon name="CheckCircle" size={14} className="mr-1" />
-                              Завершить
-                            </Button>
-                            <Button variant="outline" size="sm">
-                              <Icon name="Clock" size={14} className="mr-1" />
-                              Отложить
-                            </Button>
-                            <Button variant="outline" size="sm">
+                            <Dialog>
+                              <DialogTrigger asChild>
+                                <Button variant="default" size="sm" className="bg-secondary hover:bg-secondary/90" onClick={() => setSelectedChat(chat.id)}>
+                                  <Icon name="CheckCircle" size={14} className="mr-1" />
+                                  Завершить
+                                </Button>
+                              </DialogTrigger>
+                              <DialogContent>
+                                <DialogHeader>
+                                  <DialogTitle>Завершить чат</DialogTitle>
+                                  <DialogDescription>Укажите причину закрытия обращения</DialogDescription>
+                                </DialogHeader>
+                                <div className="space-y-4">
+                                  <Select value={closeReason} onValueChange={setCloseReason}>
+                                    <SelectTrigger>
+                                      <SelectValue placeholder="Выберите причину" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="resolved">Решено</SelectItem>
+                                      <SelectItem value="no_response">Нет ответа клиента</SelectItem>
+                                      <SelectItem value="spam">Спам</SelectItem>
+                                      <SelectItem value="duplicate">Дубликат</SelectItem>
+                                      <SelectItem value="other">Другое</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                  <Button className="w-full" onClick={() => handleCloseChat(chat.id, closeReason)}>
+                                    Подтвердить закрытие
+                                  </Button>
+                                </div>
+                              </DialogContent>
+                            </Dialog>
+
+                            <Dialog>
+                              <DialogTrigger asChild>
+                                <Button variant="outline" size="sm" onClick={() => setSelectedChat(chat.id)}>
+                                  <Icon name="Clock" size={14} className="mr-1" />
+                                  Отложить
+                                </Button>
+                              </DialogTrigger>
+                              <DialogContent>
+                                <DialogHeader>
+                                  <DialogTitle>Отложить чат</DialogTitle>
+                                  <DialogDescription>Выберите дату и время возврата чата</DialogDescription>
+                                </DialogHeader>
+                                <div className="space-y-4">
+                                  <div>
+                                    <Label>Дата</Label>
+                                    <Input type="date" value={postponeDate} onChange={(e) => setPostponeDate(e.target.value)} />
+                                  </div>
+                                  <div>
+                                    <Label>Время</Label>
+                                    <Input type="time" value={postponeTime} onChange={(e) => setPostponeTime(e.target.value)} />
+                                  </div>
+                                  <Button className="w-full" onClick={() => handlePostponeChat(chat.id, postponeDate, postponeTime)}>
+                                    Отложить чат
+                                  </Button>
+                                </div>
+                              </DialogContent>
+                            </Dialog>
+
+                            <Button variant="outline" size="sm" onClick={() => handleEscalateChat(chat.id)}>
                               <Icon name="AlertTriangle" size={14} className="mr-1" />
                               Эскалировать
                             </Button>
-                            <Button variant="outline" size="sm">
-                              <Icon name="UserCog" size={14} className="mr-1" />
-                              Перевести
-                            </Button>
+
+                            <Dialog>
+                              <DialogTrigger asChild>
+                                <Button variant="outline" size="sm" onClick={() => setSelectedChat(chat.id)}>
+                                  <Icon name="UserCog" size={14} className="mr-1" />
+                                  Перевести
+                                </Button>
+                              </DialogTrigger>
+                              <DialogContent>
+                                <DialogHeader>
+                                  <DialogTitle>Перевести чат</DialogTitle>
+                                  <DialogDescription>Выберите оператора для передачи чата</DialogDescription>
+                                </DialogHeader>
+                                <div className="space-y-4">
+                                  <Select value={transferOperator} onValueChange={setTransferOperator}>
+                                    <SelectTrigger>
+                                      <SelectValue placeholder="Выберите оператора" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="op1">Оператор 1 (На линии)</SelectItem>
+                                      <SelectItem value="op2">Оператор 2 (На линии)</SelectItem>
+                                      <SelectItem value="op3">Оператор 3 (На линии)</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                  <Button className="w-full" onClick={() => handleTransferChat(chat.id, transferOperator)}>
+                                    Перевести чат
+                                  </Button>
+                                </div>
+                              </DialogContent>
+                            </Dialog>
                           </div>
                         </div>
                       ))}
@@ -298,11 +450,11 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
                   </ScrollArea>
                 </CardContent>
               </Card>
-            </TabsContent>
+            </div>
           )}
 
-          {hasAccess('myScores') && (
-            <TabsContent value="myScores">
+          {hasAccess('myScores') && activeTab === 'myScores' && (
+            <div>
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
@@ -348,11 +500,11 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
                   </div>
                 </CardContent>
               </Card>
-            </TabsContent>
+            </div>
           )}
 
-          {hasAccess('results') && (
-            <TabsContent value="results">
+          {hasAccess('results') && activeTab === 'results' && (
+            <div>
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
@@ -384,8 +536,8 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
             </TabsContent>
           )}
 
-          {hasAccess('jira') && (
-            <TabsContent value="jira">
+          {hasAccess('jira') && activeTab === 'jira' && (
+            <div>
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
@@ -461,8 +613,8 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
             </TabsContent>
           )}
 
-          {hasAccess('knowledge') && (
-            <TabsContent value="knowledge">
+          {hasAccess('knowledge') && activeTab === 'knowledge' && (
+            <div>
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
@@ -502,8 +654,8 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
             </TabsContent>
           )}
 
-          {hasAccess('news') && (
-            <TabsContent value="news">
+          {hasAccess('news') && activeTab === 'news' && (
+            <div>
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
@@ -551,8 +703,8 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
             </TabsContent>
           )}
 
-          {hasAccess('qcPortal') && (
-            <TabsContent value="qcPortal">
+          {hasAccess('qcPortal') && activeTab === 'qcPortal' && (
+            <div>
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
@@ -609,8 +761,8 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
             </TabsContent>
           )}
 
-          {hasAccess('monitoring') && (
-            <TabsContent value="monitoring">
+          {hasAccess('monitoring') && activeTab === 'monitoring' && (
+            <div>
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
@@ -659,8 +811,8 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
             </TabsContent>
           )}
 
-          {hasAccess('allChats') && (
-            <TabsContent value="allChats">
+          {hasAccess('allChats') && activeTab === 'allChats' && (
+            <div>
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
@@ -717,8 +869,8 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
             </TabsContent>
           )}
 
-          {hasAccess('employeeManagement') && (
-            <TabsContent value="employeeManagement">
+          {hasAccess('employeeManagement') && activeTab === 'employeeManagement' && (
+            <div>
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
@@ -776,8 +928,8 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
             </TabsContent>
           )}
 
-          {hasAccess('corporateChats') && (
-            <TabsContent value="corporateChats">
+          {hasAccess('corporateChats') && activeTab === 'corporateChats' && (
+            <div>
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
@@ -828,10 +980,10 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
                   </div>
                 </CardContent>
               </Card>
-            </TabsContent>
+            </div>
           )}
-        </Tabs>
-      </div>
+        </div>
+      </main>
     </div>
   );
 };
