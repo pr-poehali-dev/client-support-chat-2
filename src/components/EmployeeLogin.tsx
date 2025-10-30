@@ -65,9 +65,11 @@ const EmployeeLogin = ({ onLogin }: EmployeeLoginProps) => {
         </div>
       </div>
 
-      <div className="bg-muted/50 border border-border rounded-lg p-3 text-xs text-muted-foreground">
-        <Icon name="Info" size={14} className="inline mr-1" />
-        Тестовый вход: admin / admin
+      <div className="bg-muted/50 border border-border rounded-lg p-3 text-xs text-muted-foreground space-y-1">
+        <div><Icon name="Info" size={14} className="inline mr-1" />Тестовые входы:</div>
+        <div>• Оператор КЦ: operator / operator</div>
+        <div>• ОКК: okk / okk</div>
+        <div>• Администратор: admin / admin</div>
       </div>
 
       <Button type="submit" className="w-full" size="lg">

@@ -6,7 +6,7 @@ import EmployeeDashboard from '@/components/EmployeeDashboard';
 import { Button } from '@/components/ui/button';
 import Icon from '@/components/ui/icon';
 
-type UserRole = 'client' | 'employee' | 'admin' | null;
+type UserRole = 'client' | 'operator' | 'okk' | 'admin' | null;
 
 interface User {
   name: string;
@@ -26,8 +26,12 @@ const Index = () => {
   const handleEmployeeLogin = (username: string, password: string) => {
     if (username === 'admin' && password === 'admin') {
       setUser({ name: 'Администратор', role: 'admin' });
+    } else if (username === 'okk' && password === 'okk') {
+      setUser({ name: 'Сотрудник ОКК', role: 'okk' });
+    } else if (username === 'operator' && password === 'operator') {
+      setUser({ name: 'Оператор КЦ', role: 'operator' });
     } else if (username && password) {
-      setUser({ name: username, role: 'employee' });
+      setUser({ name: username, role: 'operator' });
     }
   };
 
