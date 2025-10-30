@@ -135,9 +135,22 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             
             elif action == 'employees':
                 cur.execute('''
-                    SELECT id, username, name, role, status, created_at, updated_at
-                    FROM employees
-                    ORDER BY name ASC
+                    SELECT 
+                        e.id, 
+                        e.username, 
+                        e.name, 
+                        e.role, 
+                        e.status, 
+                        e.created_at, 
+                        e.updated_at,
+                        COALESCE(
+                            array_agg(er.role) FILTER (WHERE er.role IS NOT NULL),
+                            ARRAY[]::text[]
+                        ) as roles
+                    FROM employees e
+                    LEFT JOIN employee_roles er ON e.id = er.employee_id
+                    GROUP BY e.id, e.username, e.name, e.role, e.status, e.created_at, e.updated_at
+                    ORDER BY e.name ASC
                 ''')
                 employees = cur.fetchall()
                 
@@ -148,6 +161,7 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         'username': emp['username'],
                         'name': emp['name'],
                         'role': emp['role'],
+                        'roles': emp['roles'] if emp['roles'] else [emp['role']],
                         'status': emp['status'] or 'offline',
                         'createdAt': emp['created_at'].isoformat() if emp['created_at'] else None,
                         'updatedAt': emp['updated_at'].isoformat() if emp['updated_at'] else None
@@ -343,6 +357,12 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         'body': json.dumps({'error': 'Invalid username or password'})
                     }
                 
+                cur.execute('''
+                    SELECT role FROM employee_roles WHERE employee_id = %s
+                ''', (employee['id'],))
+                roles_rows = cur.fetchall()
+                roles = [r['role'] for r in roles_rows] if roles_rows else [employee['role']]
+                
                 return {
                     'statusCode': 200,
                     'headers': headers,
@@ -354,6 +374,7 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                             'username': employee['username'],
                             'name': employee['name'],
                             'role': employee['role'],
+                            'roles': roles,
                             'status': employee['status']
                         }
                     })
@@ -430,6 +451,87 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     'headers': headers,
                     'isBase64Encoded': False,
                     'body': json.dumps({'messages': result})
+                }
+            
+            elif action == 'jiraTemplates':
+                cur.execute('''
+                    SELECT id, title, category, content, created_by, created_at, updated_at
+                    FROM jira_templates
+                    ORDER BY category, title
+                ''')
+                templates = cur.fetchall()
+                
+                result = []
+                for tpl in templates:
+                    result.append({
+                        'id': tpl['id'],
+                        'title': tpl['title'],
+                        'category': tpl['category'],
+                        'content': tpl['content'],
+                        'createdBy': tpl['created_by'],
+                        'createdAt': tpl['created_at'].isoformat() if tpl['created_at'] else None,
+                        'updatedAt': tpl['updated_at'].isoformat() if tpl['updated_at'] else None
+                    })
+                
+                return {
+                    'statusCode': 200,
+                    'headers': headers,
+                    'isBase64Encoded': False,
+                    'body': json.dumps({'templates': result})
+                }
+            
+            elif action == 'employeeRoles':
+                employee_id = event.get('queryStringParameters', {}).get('employeeId', '')
+                
+                if employee_id:
+                    cur.execute('''
+                        SELECT role FROM employee_roles WHERE employee_id = %s
+                    ''', (employee_id,))
+                else:
+                    cur.execute('''
+                        SELECT er.employee_id, er.role, e.name, e.username
+                        FROM employee_roles er
+                        JOIN employees e ON er.employee_id = e.id
+                        ORDER BY e.name, er.role
+                    ''')
+                
+                roles = cur.fetchall()
+                result = [dict(r) for r in roles]
+                
+                return {
+                    'statusCode': 200,
+                    'headers': headers,
+                    'isBase64Encoded': False,
+                    'body': json.dumps({'roles': result})
+                }
+            
+            elif action == 'qcArchive':
+                cur.execute('''
+                    SELECT qa.*, c.status as chat_status
+                    FROM qc_archive qa
+                    LEFT JOIN chats c ON qa.chat_id = c.id
+                    ORDER BY qa.archived_at DESC
+                ''')
+                archive = cur.fetchall()
+                
+                result = []
+                for item in archive:
+                    result.append({
+                        'id': item['id'],
+                        'chatId': item['chat_id'],
+                        'operatorName': item['operator_name'],
+                        'qcName': item['qc_name'],
+                        'ratingScore': item['rating_score'],
+                        'ratingComment': item['rating_comment'],
+                        'archivedAt': item['archived_at'].isoformat() if item['archived_at'] else None,
+                        'chatStatus': item.get('chat_status')
+                    })
+                
+                return {
+                    'statusCode': 200,
+                    'headers': headers,
+                    'isBase64Encoded': False,
+                    'body': json.dumps({'archive': result})
                 }
             
             elif action == 'news':
@@ -1147,6 +1249,168 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     'headers': headers,
                     'isBase64Encoded': False,
                     'body': json.dumps({'success': True})
+                }
+        
+            elif action == 'createJiraTemplate':
+                title = body_data.get('title', '')
+                category = body_data.get('category', '')
+                content = body_data.get('content', '')
+                created_by = body_data.get('createdBy', '')
+                
+                if not all([title, category, content]):
+                    return {
+                        'statusCode': 400,
+                        'headers': headers,
+                        'isBase64Encoded': False,
+                        'body': json.dumps({'error': 'title, category, content required'})
+                    }
+                
+                cur.execute('''
+                    INSERT INTO jira_templates (title, category, content, created_by)
+                    VALUES (%s, %s, %s, %s)
+                    RETURNING id
+                ''', (title, category, content, created_by))
+                template_id = cur.fetchone()['id']
+                conn.commit()
+                
+                return {
+                    'statusCode': 200,
+                    'headers': headers,
+                    'isBase64Encoded': False,
+                    'body': json.dumps({'templateId': template_id, 'success': True})
+                }
+            
+            elif action == 'updateJiraTemplate':
+                template_id = body_data.get('templateId')
+                title = body_data.get('title', '')
+                category = body_data.get('category', '')
+                content = body_data.get('content', '')
+                
+                if not template_id:
+                    return {
+                        'statusCode': 400,
+                        'headers': headers,
+                        'isBase64Encoded': False,
+                        'body': json.dumps({'error': 'templateId required'})
+                    }
+                
+                cur.execute('''
+                    UPDATE jira_templates 
+                    SET title = %s, category = %s, content = %s, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = %s
+                ''', (title, category, content, template_id))
+                conn.commit()
+                
+                return {
+                    'statusCode': 200,
+                    'headers': headers,
+                    'isBase64Encoded': False,
+                    'body': json.dumps({'success': True})
+                }
+            
+            elif action == 'deleteJiraTemplate':
+                template_id = body_data.get('templateId')
+                
+                if not template_id:
+                    return {
+                        'statusCode': 400,
+                        'headers': headers,
+                        'isBase64Encoded': False,
+                        'body': json.dumps({'error': 'templateId required'})
+                    }
+                
+                cur.execute('DELETE FROM jira_templates WHERE id = %s', (template_id,))
+                conn.commit()
+                
+                return {
+                    'statusCode': 200,
+                    'headers': headers,
+                    'isBase64Encoded': False,
+                    'body': json.dumps({'success': True})
+                }
+            
+            elif action == 'addEmployeeRole':
+                employee_id = body_data.get('employeeId')
+                role = body_data.get('role', '')
+                
+                if not employee_id or not role:
+                    return {
+                        'statusCode': 400,
+                        'headers': headers,
+                        'isBase64Encoded': False,
+                        'body': json.dumps({'error': 'employeeId and role required'})
+                    }
+                
+                cur.execute('''
+                    INSERT INTO employee_roles (employee_id, role)
+                    VALUES (%s, %s)
+                    ON CONFLICT (employee_id, role) DO NOTHING
+                    RETURNING id
+                ''', (employee_id, role))
+                
+                result = cur.fetchone()
+                conn.commit()
+                
+                return {
+                    'statusCode': 200,
+                    'headers': headers,
+                    'isBase64Encoded': False,
+                    'body': json.dumps({'success': True, 'roleId': result['id'] if result else None})
+                }
+            
+            elif action == 'removeEmployeeRole':
+                employee_id = body_data.get('employeeId')
+                role = body_data.get('role', '')
+                
+                if not employee_id or not role:
+                    return {
+                        'statusCode': 400,
+                        'headers': headers,
+                        'isBase64Encoded': False,
+                        'body': json.dumps({'error': 'employeeId and role required'})
+                    }
+                
+                cur.execute('''
+                    DELETE FROM employee_roles 
+                    WHERE employee_id = %s AND role = %s
+                ''', (employee_id, role))
+                conn.commit()
+                
+                return {
+                    'statusCode': 200,
+                    'headers': headers,
+                    'isBase64Encoded': False,
+                    'body': json.dumps({'success': True})
+                }
+            
+            elif action == 'archiveQcRating':
+                chat_id = body_data.get('chatId')
+                operator_name = body_data.get('operatorName', '')
+                qc_name = body_data.get('qcName', '')
+                rating_score = body_data.get('ratingScore')
+                rating_comment = body_data.get('ratingComment', '')
+                
+                if not chat_id:
+                    return {
+                        'statusCode': 400,
+                        'headers': headers,
+                        'isBase64Encoded': False,
+                        'body': json.dumps({'error': 'chatId required'})
+                    }
+                
+                cur.execute('''
+                    INSERT INTO qc_archive (chat_id, operator_name, qc_name, rating_score, rating_comment)
+                    VALUES (%s, %s, %s, %s, %s)
+                    RETURNING id
+                ''', (chat_id, operator_name, qc_name, rating_score, rating_comment))
+                archive_id = cur.fetchone()['id']
+                conn.commit()
+                
+                return {
+                    'statusCode': 200,
+                    'headers': headers,
+                    'isBase64Encoded': False,
+                    'body': json.dumps({'archiveId': archive_id, 'success': True})
                 }
         
         return {

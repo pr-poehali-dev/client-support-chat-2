@@ -6,13 +6,14 @@ import EmployeeDashboard from '@/components/EmployeeDashboard';
 import { Button } from '@/components/ui/button';
 import Icon from '@/components/ui/icon';
 
-type UserRole = 'client' | 'operator' | 'okk' | 'admin' | null;
+type UserRole = 'client' | 'operator' | 'okk' | 'admin' | 'editor' | 'jira_operator' | null;
 
 interface User {
   name: string;
   phone?: string;
   email?: string;
   role: UserRole;
+  roles?: string[];
 }
 
 const Index = () => {
@@ -31,7 +32,8 @@ const Index = () => {
       if (data.success && data.employee) {
         setUser({ 
           name: data.employee.name, 
-          role: data.employee.role as UserRole 
+          role: data.employee.role as UserRole,
+          roles: data.employee.roles || [data.employee.role]
         });
       } else {
         alert('Неверный логин или пароль');

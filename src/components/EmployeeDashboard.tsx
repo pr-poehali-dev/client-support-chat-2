@@ -18,7 +18,8 @@ const CHAT_API_URL = 'https://functions.poehali.dev/a33a1e04-98e5-4c92-8585-2a7f
 
 interface User {
   name: string;
-  role: 'operator' | 'okk' | 'admin';
+  role: 'operator' | 'okk' | 'admin' | 'editor' | 'jira_operator';
+  roles?: string[];
 }
 
 interface EmployeeDashboardProps {
@@ -28,7 +29,11 @@ interface EmployeeDashboardProps {
 
 const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
   const [activeTab, setActiveTab] = useState('chats');
-  const [operatorStatus, setOperatorStatus] = useState<'online' | 'break' | 'lunch' | 'training' | 'dnd'>('online');
+  const [operatorStatus, setOperatorStatus] = useState<'online' | 'rest' | 'jira_processing' | 'qc_check' | 'inactive'>('online');
+  const [jiraTemplates, setJiraTemplates] = useState<any[]>([]);
+  const [isEditingTemplate, setIsEditingTemplate] = useState(false);
+  const [currentTemplate, setCurrentTemplate] = useState<any>(null);
+  const [qcArchive, setQcArchive] = useState<any[]>([]);
   const [selectedChat, setSelectedChat] = useState<number | null>(null);
   const [postponeDate, setPostponeDate] = useState('');
   const [postponeTime, setPostponeTime] = useState('');
@@ -59,6 +64,10 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
         return 'Сотрудник ОКК';
       case 'admin':
         return 'Администратор';
+      case 'editor':
+        return 'Редактор';
+      case 'jira_operator':
+        return 'Обработка Jira';
       default:
         return 'Сотрудник';
     }
@@ -66,21 +75,28 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
 
   const hasAccess = (section: string) => {
     const accessMatrix = {
-      chats: ['operator', 'okk', 'admin'],
-      myScores: ['operator', 'okk', 'admin'],
-      knowledge: ['operator', 'okk', 'admin'],
-      news: ['operator', 'okk', 'admin'],
-      okkPortal: ['operator', 'okk', 'admin'],
-      mySchedule: ['operator', 'okk', 'admin'],
+      chats: ['operator', 'okk', 'admin', 'jira_operator'],
+      myScores: ['operator', 'okk', 'admin', 'jira_operator'],
+      knowledge: ['operator', 'okk', 'admin', 'editor', 'jira_operator'],
+      news: ['operator', 'okk', 'admin', 'editor', 'jira_operator'],
+      okkPortal: ['operator', 'okk', 'admin', 'jira_operator'],
+      mySchedule: ['operator', 'okk', 'admin', 'jira_operator'],
+      jiraPortal: ['jira_operator', 'admin', 'editor'],
+      jiraTemplates: ['jira_operator', 'admin', 'editor'],
       qcPortal: ['okk', 'admin'],
+      qcArchive: ['okk', 'admin'],
       monitoring: ['okk', 'admin'],
       allChats: ['admin'],
       employeeManagement: ['admin'],
       shifts: ['admin'],
       clientsDatabase: ['admin'],
-      knowledgeEdit: ['admin'],
+      knowledgeEdit: ['admin', 'editor'],
+      newsEdit: ['admin', 'editor'],
     };
-    return accessMatrix[section as keyof typeof accessMatrix]?.includes(user.role) || false;
+    
+    const userRoles = user.roles || [user.role];
+    const requiredRoles = accessMatrix[section as keyof typeof accessMatrix] || [];
+    return userRoles.some(role => requiredRoles.includes(role));
   };
 
   const getAverageScore = () => {
@@ -214,15 +230,16 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
   }, []);
 
   useEffect(() => {
-    if (!hasAccess('knowledge')) return;
+    if (activeTab !== 'knowledge' && activeTab !== 'news') return;
     
     const fetchKnowledge = async () => {
       try {
         const response = await fetch(`${CHAT_API_URL}?action=knowledge`);
         const data = await response.json();
-        setKnowledgeArticles(data.articles);
+        setKnowledgeArticles(data.articles || []);
       } catch (error) {
         console.error('Failed to fetch knowledge:', error);
+        setKnowledgeArticles([]);
       }
     };
 
@@ -243,6 +260,38 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
     };
 
     fetchShifts();
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab !== 'jiraPortal') return;
+    
+    const fetchTemplates = async () => {
+      try {
+        const response = await fetch(`${CHAT_API_URL}?action=jiraTemplates`);
+        const data = await response.json();
+        setJiraTemplates(data.templates || []);
+      } catch (error) {
+        console.error('Failed to fetch jira templates:', error);
+      }
+    };
+
+    fetchTemplates();
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab !== 'qcArchive') return;
+    
+    const fetchArchive = async () => {
+      try {
+        const response = await fetch(`${CHAT_API_URL}?action=qcArchive`);
+        const data = await response.json();
+        setQcArchive(data.archive || []);
+      } catch (error) {
+        console.error('Failed to fetch qc archive:', error);
+      }
+    };
+
+    fetchArchive();
   }, [activeTab]);
 
   const handleSendMessage = async (chatId: number) => {
@@ -505,6 +554,11 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
   const handleSubmitRating = async (chatId: number, operatorName: string) => {
     if (!ratingScore || ratingScore < 1 || ratingScore > 5) return;
     
+    if (operatorStatus !== 'qc_check') {
+      alert('Для оценки тикетов переключитесь в статус "Проверка QC"');
+      return;
+    }
+    
     try {
       await fetch(CHAT_API_URL, {
         method: 'POST',
@@ -516,6 +570,19 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
           ratedBy: user.name,
           score: ratingScore,
           comment: ratingComment
+        }),
+      });
+
+      await fetch(CHAT_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'archiveQcRating',
+          chatId,
+          operatorName,
+          qcName: user.name,
+          ratingScore,
+          ratingComment
         }),
       });
 
@@ -570,10 +637,10 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
   const getStatusName = (status: string) => {
     const statusMap: Record<string, string> = {
       online: 'На линии',
-      break: 'Перерыв',
-      lunch: 'Обед',
-      training: 'Обучение',
-      dnd: 'Не беспокоить',
+      rest: 'Отдых',
+      jira_processing: 'Обработка Jira',
+      qc_check: 'Проверка QC',
+      inactive: 'Не активен',
       offline: 'Не в сети',
     };
     return statusMap[status] || status;
@@ -582,10 +649,10 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
   const getStatusColor = (status: string) => {
     const colorMap: Record<string, string> = {
       online: 'bg-green-500',
-      break: 'bg-yellow-500',
-      lunch: 'bg-orange-500',
-      training: 'bg-blue-500',
-      dnd: 'bg-destructive',
+      rest: 'bg-yellow-500',
+      jira_processing: 'bg-blue-500',
+      qc_check: 'bg-purple-500',
+      inactive: 'bg-gray-400',
       offline: 'bg-muted',
     };
     return colorMap[status] || 'bg-muted';
@@ -616,6 +683,12 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
   }
   if (hasAccess('mySchedule')) {
     availableTabs.push({ id: 'mySchedule', icon: 'Clock', label: 'График работы' });
+  }
+  if (hasAccess('jiraPortal')) {
+    availableTabs.push({ id: 'jiraPortal', icon: 'FileText', label: 'Портал Jira' });
+  }
+  if (hasAccess('qcArchive')) {
+    availableTabs.push({ id: 'qcArchive', icon: 'Archive', label: 'Архив QC' });
   }
   if (hasAccess('employeeManagement')) {
     availableTabs.push({ id: 'employees', icon: 'Users', label: 'Сотрудники' });
@@ -679,10 +752,10 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="online">На линии</SelectItem>
-                  <SelectItem value="break">Перерыв</SelectItem>
-                  <SelectItem value="lunch">Обед</SelectItem>
-                  <SelectItem value="training">Обучение</SelectItem>
-                  <SelectItem value="dnd">Не беспокоить</SelectItem>
+                  <SelectItem value="rest">Отдых</SelectItem>
+                  <SelectItem value="jira_processing">Обработка Jira</SelectItem>
+                  {(hasAccess('qcPortal')) && <SelectItem value="qc_check">Проверка QC</SelectItem>}
+                  <SelectItem value="inactive">Не активен</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -1004,20 +1077,27 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
                 <div className="space-y-4">
                   {employees.map((employee: any) => (
                     <div key={employee.id} className="p-4 rounded-lg border border-border bg-card flex items-center justify-between">
-                      <div className="flex items-center gap-4">
+                      <div className="flex items-center gap-4 flex-1">
                         <Avatar className="w-12 h-12 bg-secondary">
                           <AvatarFallback>{employee.name.charAt(0)}</AvatarFallback>
                         </Avatar>
-                        <div>
+                        <div className="flex-1">
                           <h4 className="font-semibold">{employee.name}</h4>
-                          <p className="text-xs text-muted-foreground">{getRoleName(employee.role)}</p>
-                          <div className="flex items-center gap-2 mt-1">
+                          <p className="text-xs text-muted-foreground">{employee.username}</p>
+                          <div className="flex items-center gap-2 mt-1 flex-wrap">
                             <div className={`w-2 h-2 rounded-full ${getStatusColor(employee.status)}`}></div>
                             <span className="text-xs">{getStatusName(employee.status)}</span>
                           </div>
+                          <div className="flex gap-1 mt-2 flex-wrap">
+                            {(employee.roles || [employee.role]).map((role: string, idx: number) => (
+                              <Badge key={idx} variant="outline" className="text-xs">
+                                {getRoleName(role)}
+                              </Badge>
+                            ))}
+                          </div>
                         </div>
                       </div>
-                      <div className="text-right">
+                      <div className="flex flex-col gap-2">
                         <Select 
                           value={employee.status} 
                           onValueChange={(val) => handleEmployeeStatusChange(employee.name, val)}
@@ -1027,13 +1107,75 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="online">На линии</SelectItem>
-                            <SelectItem value="break">Перерыв</SelectItem>
-                            <SelectItem value="lunch">Обед</SelectItem>
-                            <SelectItem value="training">Обучение</SelectItem>
-                            <SelectItem value="dnd">Не беспокоить</SelectItem>
-                            <SelectItem value="offline">Не в сети</SelectItem>
+                            <SelectItem value="rest">Отдых</SelectItem>
+                            <SelectItem value="jira_processing">Обработка Jira</SelectItem>
+                            <SelectItem value="qc_check">Проверка QC</SelectItem>
+                            <SelectItem value="inactive">Не активен</SelectItem>
                           </SelectContent>
                         </Select>
+                        <Dialog>
+                          <DialogTrigger asChild>
+                            <Button variant="outline" size="sm" className="w-40">
+                              <Icon name="Shield" size={14} className="mr-1" />
+                              Роли
+                            </Button>
+                          </DialogTrigger>
+                          <DialogContent>
+                            <DialogHeader>
+                              <DialogTitle>Управление ролями: {employee.name}</DialogTitle>
+                              <DialogDescription>Добавьте или удалите роли сотрудника</DialogDescription>
+                            </DialogHeader>
+                            <div className="space-y-4">
+                              <div>
+                                <Label>Доступные роли</Label>
+                                <div className="flex flex-wrap gap-2 mt-2">
+                                  {['operator', 'okk', 'admin', 'editor', 'jira_operator'].map(role => {
+                                    const hasRole = (employee.roles || [employee.role]).includes(role);
+                                    return (
+                                      <Badge 
+                                        key={role} 
+                                        variant={hasRole ? 'default' : 'outline'}
+                                        className="cursor-pointer"
+                                        onClick={async () => {
+                                          try {
+                                            if (hasRole) {
+                                              await fetch(CHAT_API_URL, {
+                                                method: 'POST',
+                                                headers: { 'Content-Type': 'application/json' },
+                                                body: JSON.stringify({
+                                                  action: 'removeEmployeeRole',
+                                                  employeeId: employee.id,
+                                                  role
+                                                })
+                                              });
+                                            } else {
+                                              await fetch(CHAT_API_URL, {
+                                                method: 'POST',
+                                                headers: { 'Content-Type': 'application/json' },
+                                                body: JSON.stringify({
+                                                  action: 'addEmployeeRole',
+                                                  employeeId: employee.id,
+                                                  role
+                                                })
+                                              });
+                                            }
+                                            const response = await fetch(`${CHAT_API_URL}?action=employees`);
+                                            const data = await response.json();
+                                            setEmployees(data.employees);
+                                          } catch (error) {
+                                            console.error('Failed to update role:', error);
+                                          }
+                                        }}
+                                      >
+                                        {getRoleName(role)}
+                                      </Badge>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            </div>
+                          </DialogContent>
+                        </Dialog>
                       </div>
                     </div>
                   ))}
@@ -1305,17 +1447,31 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
           <div className="flex-1 p-3 md:p-6">
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Button 
-                    variant="ghost" 
-                    size="icon" 
-                    className="md:hidden"
-                    onClick={() => setSidebarOpen(true)}
-                  >
-                    <Icon name="Menu" size={20} />
-                  </Button>
-                  <Icon name="Newspaper" size={20} />
-                  Новости
+                <CardTitle className="flex items-center gap-2 justify-between">
+                  <div className="flex items-center gap-2">
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className="md:hidden"
+                      onClick={() => setSidebarOpen(true)}
+                    >
+                      <Icon name="Menu" size={20} />
+                    </Button>
+                    <Icon name="Newspaper" size={20} />
+                    Новости
+                  </div>
+                  {hasAccess('newsEdit') && (
+                    <Button 
+                      size="sm"
+                      onClick={() => {
+                        setCurrentArticle({ title: '', category: 'news', content: '' });
+                        setIsEditingArticle(true);
+                      }}
+                    >
+                      <Icon name="Plus" size={16} className="mr-1" />
+                      Создать новость
+                    </Button>
+                  )}
                 </CardTitle>
                 <CardDescription>Последние новости и объявления</CardDescription>
               </CardHeader>
@@ -1444,6 +1600,215 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
                     </div>
                   )}
                 </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {hasAccess('jiraPortal') && activeTab === 'jiraPortal' && (
+          <div className="flex-1 p-3 md:p-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 justify-between">
+                  <div className="flex items-center gap-2">
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className="md:hidden"
+                      onClick={() => setSidebarOpen(true)}
+                    >
+                      <Icon name="Menu" size={20} />
+                    </Button>
+                    <Icon name="FileText" size={20} />
+                    Портал Jira - Шаблоны
+                  </div>
+                  {hasAccess('jiraTemplates') && (
+                    <Button 
+                      size="sm"
+                      onClick={() => {
+                        setCurrentTemplate({ title: '', category: '', content: '' });
+                        setIsEditingTemplate(true);
+                      }}
+                    >
+                      <Icon name="Plus" size={16} className="mr-1" />
+                      Создать шаблон
+                    </Button>
+                  )}
+                </CardTitle>
+                <CardDescription>Шаблоны для обработки тикетов Jira</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {isEditingTemplate ? (
+                  <div className="space-y-4 max-w-2xl">
+                    <div>
+                      <Label>Название шаблона</Label>
+                      <Input 
+                        value={currentTemplate?.title || ''} 
+                        onChange={(e) => setCurrentTemplate({...currentTemplate, title: e.target.value})}
+                      />
+                    </div>
+                    <div>
+                      <Label>Категория</Label>
+                      <Input 
+                        value={currentTemplate?.category || ''} 
+                        onChange={(e) => setCurrentTemplate({...currentTemplate, category: e.target.value})}
+                        placeholder="Например: Техническая поддержка, Биллинг..."
+                      />
+                    </div>
+                    <div>
+                      <Label>Текст шаблона</Label>
+                      <Textarea 
+                        rows={10}
+                        value={currentTemplate?.content || ''} 
+                        onChange={(e) => setCurrentTemplate({...currentTemplate, content: e.target.value})}
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <Button onClick={async () => {
+                        try {
+                          const action = currentTemplate?.id ? 'updateJiraTemplate' : 'createJiraTemplate';
+                          await fetch(CHAT_API_URL, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              action,
+                              ...currentTemplate,
+                              templateId: currentTemplate?.id,
+                              createdBy: user.name
+                            })
+                          });
+                          setIsEditingTemplate(false);
+                          setCurrentTemplate(null);
+                          const response = await fetch(`${CHAT_API_URL}?action=jiraTemplates`);
+                          const data = await response.json();
+                          setJiraTemplates(data.templates);
+                        } catch (error) {
+                          console.error('Failed to save template:', error);
+                        }
+                      }}>
+                        <Icon name="Save" size={16} className="mr-1" />
+                        Сохранить
+                      </Button>
+                      <Button variant="outline" onClick={() => {
+                        setIsEditingTemplate(false);
+                        setCurrentTemplate(null);
+                      }}>
+                        Отмена
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <ScrollArea className="h-[600px]">
+                    <div className="space-y-3">
+                      {jiraTemplates.map((template: any) => (
+                        <div key={template.id} className="p-4 rounded-lg border border-border bg-card hover:shadow-md transition-shadow">
+                          <div className="flex items-start justify-between">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-2">
+                                <h4 className="font-semibold">{template.title}</h4>
+                                <Badge variant="outline">{template.category}</Badge>
+                              </div>
+                              <p className="text-sm text-muted-foreground whitespace-pre-wrap">{template.content}</p>
+                              <p className="text-xs text-muted-foreground mt-2">Создал: {template.createdBy}</p>
+                            </div>
+                            {hasAccess('jiraTemplates') && (
+                              <div className="flex gap-1">
+                                <Button 
+                                  variant="ghost" 
+                                  size="sm"
+                                  onClick={() => {
+                                    setCurrentTemplate(template);
+                                    setIsEditingTemplate(true);
+                                  }}
+                                >
+                                  <Icon name="Edit" size={16} />
+                                </Button>
+                                <Button 
+                                  variant="ghost" 
+                                  size="sm"
+                                  onClick={async () => {
+                                    if (confirm('Удалить шаблон?')) {
+                                      await fetch(CHAT_API_URL, {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ action: 'deleteJiraTemplate', templateId: template.id })
+                                      });
+                                      const response = await fetch(`${CHAT_API_URL}?action=jiraTemplates`);
+                                      const data = await response.json();
+                                      setJiraTemplates(data.templates);
+                                    }
+                                  }}
+                                >
+                                  <Icon name="Trash2" size={16} />
+                                </Button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                      {jiraTemplates.length === 0 && (
+                        <div className="text-center py-12 text-muted-foreground">
+                          <Icon name="FileText" size={48} className="mx-auto mb-3 opacity-30" />
+                          <p>Нет шаблонов</p>
+                        </div>
+                      )}
+                    </div>
+                  </ScrollArea>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {hasAccess('qcArchive') && activeTab === 'qcArchive' && (
+          <div className="flex-1 p-3 md:p-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="md:hidden"
+                    onClick={() => setSidebarOpen(true)}
+                  >
+                    <Icon name="Menu" size={20} />
+                  </Button>
+                  <Icon name="Archive" size={20} />
+                  Архив оцененных QC тикетов
+                </CardTitle>
+                <CardDescription>История проверок качества</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ScrollArea className="h-[600px]">
+                  <div className="space-y-3">
+                    {qcArchive.map((item: any) => (
+                      <div key={item.id} className="p-4 rounded-lg border border-border bg-card">
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-2">
+                              <h4 className="font-semibold">Чат #{item.chatId}</h4>
+                              <Badge>Оценка: {item.ratingScore}/5</Badge>
+                            </div>
+                            <p className="text-sm mb-1"><strong>Оператор:</strong> {item.operatorName}</p>
+                            <p className="text-sm mb-1"><strong>Проверил:</strong> {item.qcName}</p>
+                            {item.ratingComment && (
+                              <p className="text-sm text-muted-foreground mt-2">{item.ratingComment}</p>
+                            )}
+                            <p className="text-xs text-muted-foreground mt-2">
+                              Архивировано: {new Date(item.archivedAt).toLocaleString('ru-RU')}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                    {qcArchive.length === 0 && (
+                      <div className="text-center py-12 text-muted-foreground">
+                        <Icon name="Archive" size={48} className="mx-auto mb-3 opacity-30" />
+                        <p>Архив пуст</p>
+                      </div>
+                    )}
+                  </div>
+                </ScrollArea>
               </CardContent>
             </Card>
           </div>
