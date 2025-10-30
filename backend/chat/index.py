@@ -316,6 +316,49 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     'body': json.dumps({'ratings': result})
                 }
             
+            elif action == 'login':
+                username = event.get('queryStringParameters', {}).get('username', '')
+                password = event.get('queryStringParameters', {}).get('password', '')
+                
+                if not username or not password:
+                    return {
+                        'statusCode': 400,
+                        'headers': headers,
+                        'isBase64Encoded': False,
+                        'body': json.dumps({'error': 'username and password required'})
+                    }
+                
+                cur.execute('''
+                    SELECT id, username, name, role, status
+                    FROM employees
+                    WHERE username = %s AND password = %s
+                ''', (username, password))
+                employee = cur.fetchone()
+                
+                if not employee:
+                    return {
+                        'statusCode': 401,
+                        'headers': headers,
+                        'isBase64Encoded': False,
+                        'body': json.dumps({'error': 'Invalid username or password'})
+                    }
+                
+                return {
+                    'statusCode': 200,
+                    'headers': headers,
+                    'isBase64Encoded': False,
+                    'body': json.dumps({
+                        'success': True,
+                        'employee': {
+                            'id': employee['id'],
+                            'username': employee['username'],
+                            'name': employee['name'],
+                            'role': employee['role'],
+                            'status': employee['status']
+                        }
+                    })
+                }
+            
             elif action == 'corporateChats':
                 employee_name = event.get('queryStringParameters', {}).get('employeeName', '')
                 

@@ -5,7 +5,7 @@ import { Label } from '@/components/ui/label';
 import Icon from '@/components/ui/icon';
 
 interface EmployeeLoginProps {
-  onLogin: (username: string, password: string) => void;
+  onLogin: (username: string, password: string) => Promise<void>;
 }
 
 const EmployeeLogin = ({ onLogin }: EmployeeLoginProps) => {
@@ -66,10 +66,8 @@ const EmployeeLogin = ({ onLogin }: EmployeeLoginProps) => {
       </div>
 
       <div className="bg-muted/50 border border-border rounded-lg p-3 text-xs text-muted-foreground space-y-1">
-        <div><Icon name="Info" size={14} className="inline mr-1" />Тестовые входы:</div>
-        <div>• Оператор: operator1 / operator</div>
-        <div>• ОКК: okk1 / okk</div>
-        <div>• Администратор: admin / admin</div>
+        <div><Icon name="Shield" size={14} className="inline mr-1" />Вход только для зарегистрированных сотрудников</div>
+        <div>Обратитесь к администратору для получения доступа</div>
       </div>
 
       <Button type="submit" className="w-full" size="lg">

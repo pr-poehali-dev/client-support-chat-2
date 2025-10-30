@@ -23,15 +23,22 @@ const Index = () => {
     setUser({ name, phone, email, role: 'client' });
   };
 
-  const handleEmployeeLogin = (username: string, password: string) => {
-    if (username === 'operator1' && password === 'operator') {
-      setUser({ name: 'Иван Петров', role: 'operator' });
-    } else if (username === 'okk1' && password === 'okk') {
-      setUser({ name: 'Мария Сидорова', role: 'okk' });
-    } else if (username === 'admin' && password === 'admin') {
-      setUser({ name: 'Алексей Козлов', role: 'admin' });
-    } else if (username && password) {
-      setUser({ name: username, role: 'operator' });
+  const handleEmployeeLogin = async (username: string, password: string) => {
+    try {
+      const response = await fetch(`https://functions.poehali.dev/a33a1e04-98e5-4c92-8585-2a7f74db1d36?action=login&username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`);
+      const data = await response.json();
+      
+      if (data.success && data.employee) {
+        setUser({ 
+          name: data.employee.name, 
+          role: data.employee.role as UserRole 
+        });
+      } else {
+        alert('Неверный логин или пароль');
+      }
+    } catch (error) {
+      console.error('Login failed:', error);
+      alert('Ошибка входа. Проверьте подключение к интернету.');
     }
   };
 
