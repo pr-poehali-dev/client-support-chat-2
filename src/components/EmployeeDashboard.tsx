@@ -13,6 +13,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Label } from '@/components/ui/label';
 import Icon from '@/components/ui/icon';
 
+const CHAT_API_URL = 'https://functions.poehali.dev/a33a1e04-98e5-4c92-8585-2a7f74db1d36';
+
 interface User {
   name: string;
   role: 'operator' | 'okk' | 'admin';
@@ -29,19 +31,9 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
   const [selectedChat, setSelectedChat] = useState<number | null>(null);
   const [postponeDate, setPostponeDate] = useState('');
   const [postponeTime, setPostponeTime] = useState('');
-  const [transferOperator, setTransferOperator] = useState('');
   const [closeReason, setCloseReason] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [chats, setChats] = useState([
-    { id: 1, client: 'Иван Петров', phone: '+7 (999) 123-45-67', lastMessage: 'Здравствуйте, нужна помощь', time: '14:23', unread: 2, status: 'active', messages: [
-      { id: 1, sender: 'client', text: 'Здравствуйте, нужна помощь', time: '14:20' },
-      { id: 2, sender: 'client', text: 'У меня проблема с заказом', time: '14:23' }
-    ]},
-    { id: 2, client: 'Мария Сидорова', phone: '+7 (999) 234-56-78', lastMessage: 'Спасибо за помощь!', time: '13:45', unread: 0, status: 'closed', messages: [] },
-    { id: 3, client: 'Алексей Козлов', phone: '+7 (999) 345-67-89', lastMessage: 'Когда будет ответ?', time: '12:10', unread: 1, status: 'active', messages: [
-      { id: 1, sender: 'client', text: 'Когда будет ответ?', time: '12:10' }
-    ]},
-  ]);
+  const [chats, setChats] = useState<any[]>([]);
   const [openChatId, setOpenChatId] = useState<number | null>(null);
   const [messageText, setMessageText] = useState('');
   const [employees, setEmployees] = useState([
@@ -49,6 +41,9 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
     { id: 2, username: 'operator2', password: 'okk', name: 'Мария Сидорова', role: 'okk', status: 'online' as const, chats: 12, avgScore: 88, responseTime: 3.5 },
     { id: 3, username: 'operator3', password: 'admin', name: 'Алексей Козлов', role: 'operator', status: 'break' as const, chats: 8, avgScore: 95, responseTime: 1.8 },
   ]);
+  const [clients, setClients] = useState<any[]>([]);
+  const [newChatNotifications, setNewChatNotifications] = useState<number[]>([]);
+  const [previousChatCount, setPreviousChatCount] = useState(0);
 
   const getRoleName = (role: string) => {
     switch (role) {
@@ -76,61 +71,121 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
       allChats: ['admin'],
       employeeManagement: ['admin'],
       corporateChats: ['admin'],
+      clientsDatabase: ['admin'],
     };
     return accessMatrix[section as keyof typeof accessMatrix]?.includes(user.role) || false;
   };
 
   useEffect(() => {
-    if (operatorStatus === 'online' && (user.role === 'operator' || user.role === 'okk')) {
-      const interval = setInterval(() => {
-        const shouldReceiveNewChat = Math.random() > 0.8;
-        if (shouldReceiveNewChat) {
-          const newChatId = Date.now();
-          const clients = ['Дмитрий Новиков', 'Елена Васильева', 'Сергей Морозов', 'Ольга Кузнецова', 'Павел Соколов'];
-          const messages = ['Добрый день!', 'Помогите разобраться', 'У меня вопрос', 'Срочно нужна помощь', 'Не получается оформить заказ'];
-          const messageText = messages[Math.floor(Math.random() * messages.length)];
-          const currentTime = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-          const newChat = {
-            id: newChatId,
-            client: clients[Math.floor(Math.random() * clients.length)],
-            phone: `+7 (999) ${Math.floor(100 + Math.random() * 900)}-${Math.floor(10 + Math.random() * 90)}-${Math.floor(10 + Math.random() * 90)}`,
-            lastMessage: messageText,
-            time: currentTime,
-            unread: 1,
-            status: 'active',
-            messages: [{ id: 1, sender: 'client', text: messageText, time: currentTime }]
-          };
-          setChats(prev => [newChat, ...prev]);
-        }
-      }, 10000);
-      return () => clearInterval(interval);
-    }
-  }, [operatorStatus, user.role]);
+    const fetchChats = async () => {
+      try {
+        const response = await fetch(`${CHAT_API_URL}?action=list`);
+        const data = await response.json();
+        
+        const formattedChats = data.chats.map((chat: any) => ({
+          id: chat.id,
+          client: chat.clientName || 'Клиент',
+          phone: chat.phone || '',
+          email: chat.email || '',
+          ipAddress: chat.ipAddress || '',
+          lastMessage: '',
+          time: new Date(chat.updatedAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }),
+          unread: 0,
+          status: chat.status,
+          assignedOperator: chat.assignedOperator,
+          messages: []
+        }));
 
-  const handleSendMessage = (chatId: number) => {
-    if (!messageText.trim()) return;
-    const currentTime = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-    setChats(prev => prev.map(chat => {
-      if (chat.id === chatId) {
-        const newMessage = { id: (chat.messages?.length || 0) + 1, sender: 'operator', text: messageText, time: currentTime };
-        return {
-          ...chat,
-          messages: [...(chat.messages || []), newMessage],
-          lastMessage: messageText,
-          time: currentTime,
-          unread: 0
-        };
+        if (formattedChats.length > previousChatCount) {
+          const newChats = formattedChats.slice(0, formattedChats.length - previousChatCount);
+          setNewChatNotifications(prev => [...prev, ...newChats.map((c: any) => c.id)]);
+          
+          if (Notification.permission === 'granted') {
+            new Notification('Новый чат!', {
+              body: `Поступил новый чат от клиента`,
+              icon: '/favicon.ico'
+            });
+          }
+        }
+        setPreviousChatCount(formattedChats.length);
+        setChats(formattedChats);
+      } catch (error) {
+        console.error('Failed to fetch chats:', error);
       }
-      return chat;
-    }));
-    setMessageText('');
+    };
+
+    fetchChats();
+    const interval = setInterval(fetchChats, 5000);
+    return () => clearInterval(interval);
+  }, [previousChatCount]);
+
+  useEffect(() => {
+    if (Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!hasAccess('clientsDatabase')) return;
+    
+    const fetchClients = async () => {
+      try {
+        const response = await fetch(`${CHAT_API_URL}?action=clients`);
+        const data = await response.json();
+        setClients(data.clients);
+      } catch (error) {
+        console.error('Failed to fetch clients:', error);
+      }
+    };
+
+    fetchClients();
+    const interval = setInterval(fetchClients, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleSendMessage = async (chatId: number) => {
+    if (!messageText.trim()) return;
+    
+    try {
+      await fetch(CHAT_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'sendMessage',
+          chatId,
+          senderType: 'operator',
+          senderName: user.name,
+          message: messageText,
+        }),
+      });
+
+      setMessageText('');
+    } catch (error) {
+      console.error('Failed to send message:', error);
+    }
   };
 
-  const handleOpenChat = (chatId: number) => {
+  const handleOpenChat = async (chatId: number) => {
     setOpenChatId(chatId);
-    setChats(prev => prev.map(chat => 
-      chat.id === chatId ? { ...chat, unread: 0 } : chat
-    ));
+    setNewChatNotifications(prev => prev.filter(id => id !== chatId));
+
+    try {
+      const response = await fetch(`${CHAT_API_URL}?action=messages&chatId=${chatId}`);
+      const data = await response.json();
+
+      const loadedMessages = data.messages.map((msg: any) => ({
+        id: msg.id,
+        sender: msg.senderType === 'client' ? 'client' : 'operator',
+        text: msg.text,
+        time: new Date(msg.createdAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }),
+      }));
+
+      setChats(prev => prev.map(chat => 
+        chat.id === chatId ? { ...chat, messages: loadedMessages, unread: 0 } : chat
+      ));
+    } catch (error) {
+      console.error('Failed to fetch messages:', error);
+    }
   };
 
   const handleEmployeeStatusChange = (employeeId: number, newStatus: 'online' | 'break' | 'lunch' | 'training' | 'dnd') => {
@@ -139,34 +194,95 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
     ));
   };
 
-  const handleCloseChat = (chatId: number, reason: string) => {
-    setChats(prev => prev.map(chat => 
-      chat.id === chatId ? { ...chat, status: 'closed' } : chat
-    ));
-    setSelectedChat(null);
-    setCloseReason('');
+  const handleCloseChat = async (chatId: number, reason: string) => {
+    try {
+      await fetch(CHAT_API_URL, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'updateStatus',
+          chatId,
+          status: 'closed',
+          assignedOperator: user.name
+        }),
+      });
+
+      setChats(prev => prev.map(chat => 
+        chat.id === chatId ? { ...chat, status: 'closed' } : chat
+      ));
+      setSelectedChat(null);
+      setCloseReason('');
+    } catch (error) {
+      console.error('Failed to close chat:', error);
+    }
   };
 
-  const handlePostponeChat = (chatId: number, date: string, time: string) => {
-    setChats(prev => prev.map(chat => 
-      chat.id === chatId ? { ...chat, status: 'postponed' } : chat
-    ));
-    setSelectedChat(null);
-    setPostponeDate('');
-    setPostponeTime('');
+  const handlePostponeChat = async (chatId: number, date: string, time: string) => {
+    try {
+      await fetch(CHAT_API_URL, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'updateStatus',
+          chatId,
+          status: 'postponed',
+          assignedOperator: user.name
+        }),
+      });
+
+      setChats(prev => prev.map(chat => 
+        chat.id === chatId ? { ...chat, status: 'postponed' } : chat
+      ));
+      setSelectedChat(null);
+      setPostponeDate('');
+      setPostponeTime('');
+    } catch (error) {
+      console.error('Failed to postpone chat:', error);
+    }
   };
 
-  const handleTransferChat = (chatId: number, operatorId: string) => {
-    setChats(prev => prev.filter(chat => chat.id !== chatId));
-    setSelectedChat(null);
-    setTransferOperator('');
+  const handleEscalateChat = async (chatId: number) => {
+    try {
+      await fetch(CHAT_API_URL, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'updateStatus',
+          chatId,
+          status: 'escalated',
+          assignedOperator: user.name
+        }),
+      });
+
+      setChats(prev => prev.map(chat => 
+        chat.id === chatId ? { ...chat, status: 'escalated' } : chat
+      ));
+      setSelectedChat(null);
+    } catch (error) {
+      console.error('Failed to escalate chat:', error);
+    }
   };
 
-  const handleEscalateChat = (chatId: number) => {
-    setChats(prev => prev.map(chat => 
-      chat.id === chatId ? { ...chat, status: 'escalated' } : chat
-    ));
-    setSelectedChat(null);
+  const handleAcceptChat = async (chatId: number) => {
+    try {
+      await fetch(CHAT_API_URL, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'updateStatus',
+          chatId,
+          status: 'active',
+          assignedOperator: user.name
+        }),
+      });
+
+      setChats(prev => prev.map(chat => 
+        chat.id === chatId ? { ...chat, status: 'active', assignedOperator: user.name } : chat
+      ));
+      setNewChatNotifications(prev => prev.filter(id => id !== chatId));
+    } catch (error) {
+      console.error('Failed to accept chat:', error);
+    }
   };
 
   const mockQCScores = [
@@ -256,97 +372,98 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
   ]);
 
   const availableTabs = [];
-  if (hasAccess('chats')) availableTabs.push({ value: 'chats', label: 'Чаты', icon: 'MessageSquare' });
-  if (hasAccess('myScores')) availableTabs.push({ value: 'myScores', label: 'Мои оценки', icon: 'Award' });
-  if (hasAccess('results')) availableTabs.push({ value: 'results', label: 'Результаты', icon: 'TrendingUp' });
-  if (hasAccess('jira')) availableTabs.push({ value: 'jira', label: 'Jira', icon: 'ListTodo' });
-  if (hasAccess('knowledge')) availableTabs.push({ value: 'knowledge', label: 'База знаний', icon: 'BookOpen' });
-  if (hasAccess('news')) availableTabs.push({ value: 'news', label: 'Новости', icon: 'Newspaper' });
-  if (hasAccess('qcPortal')) availableTabs.push({ value: 'qcPortal', label: 'Портал QC', icon: 'ClipboardCheck' });
-  if (hasAccess('monitoring')) availableTabs.push({ value: 'monitoring', label: 'Мониторинг', icon: 'Monitor' });
-  if (hasAccess('allChats')) availableTabs.push({ value: 'allChats', label: 'Все чаты', icon: 'Database' });
-  if (hasAccess('employeeManagement')) availableTabs.push({ value: 'employeeManagement', label: 'Сотрудники', icon: 'Users' });
-  if (hasAccess('corporateChats')) availableTabs.push({ value: 'corporateChats', label: 'Корп. чаты', icon: 'Building2' });
+
+  if (hasAccess('chats')) {
+    availableTabs.push({ id: 'chats', icon: 'MessageSquare', label: 'Чаты' });
+  }
+  if (hasAccess('allChats')) {
+    availableTabs.push({ id: 'allChats', icon: 'MessagesSquare', label: 'Все чаты' });
+  }
+  if (hasAccess('myScores')) {
+    availableTabs.push({ id: 'myScores', icon: 'BarChart3', label: 'Мои оценки' });
+  }
+  if (hasAccess('results')) {
+    availableTabs.push({ id: 'results', icon: 'TrendingUp', label: 'Результаты' });
+  }
+  if (hasAccess('jira')) {
+    availableTabs.push({ id: 'jira', icon: 'ListTodo', label: 'Jira задачи' });
+  }
+  if (hasAccess('knowledge')) {
+    availableTabs.push({ id: 'knowledge', icon: 'BookOpen', label: 'База знаний' });
+  }
+  if (hasAccess('news')) {
+    availableTabs.push({ id: 'news', icon: 'Newspaper', label: 'Новости' });
+  }
+  if (hasAccess('qcPortal')) {
+    availableTabs.push({ id: 'qcPortal', icon: 'Shield', label: 'Портал ОКК' });
+  }
+  if (hasAccess('monitoring')) {
+    availableTabs.push({ id: 'monitoring', icon: 'Activity', label: 'Мониторинг' });
+  }
+  if (hasAccess('employeeManagement')) {
+    availableTabs.push({ id: 'employees', icon: 'Users', label: 'Сотрудники' });
+  }
+  if (hasAccess('corporateChats')) {
+    availableTabs.push({ id: 'corporateChats', icon: 'Building', label: 'Корп. чаты' });
+  }
+  if (hasAccess('clientsDatabase')) {
+    availableTabs.push({ id: 'clientsDatabase', icon: 'Database', label: 'База клиентов' });
+  }
 
   return (
     <div className="min-h-screen bg-background dark flex">
-      <aside className={`${sidebarOpen ? 'w-64' : 'w-16'} bg-card border-r border-border transition-all duration-300 flex flex-col`}>
+      <aside className={`${sidebarOpen ? 'w-64' : 'w-20'} bg-card border-r border-border transition-all duration-300 flex flex-col`}>
         <div className="p-4 border-b border-border flex items-center justify-between">
-          {sidebarOpen && <h1 className="font-bold text-lg text-foreground">КЦ Система</h1>}
+          {sidebarOpen && <h1 className="text-xl font-bold text-foreground">КЦ Поток</h1>}
           <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(!sidebarOpen)}>
-            <Icon name={sidebarOpen ? "PanelLeftClose" : "PanelLeftOpen"} size={20} />
+            <Icon name={sidebarOpen ? 'PanelLeftClose' : 'PanelLeftOpen'} size={20} />
           </Button>
         </div>
-        
-        <ScrollArea className="flex-1 p-2">
-          <div className="space-y-1">
-            {availableTabs.map((tab) => (
+
+        <ScrollArea className="flex-1 px-2">
+          <div className="space-y-1 py-2">
+            {availableTabs.map(tab => (
               <Button
-                key={tab.value}
-                variant={activeTab === tab.value ? "secondary" : "ghost"}
-                className={`w-full justify-start gap-2 ${!sidebarOpen && 'justify-center'}`}
-                onClick={() => setActiveTab(tab.value)}
+                key={tab.id}
+                variant={activeTab === tab.id ? 'default' : 'ghost'}
+                className={`w-full ${!sidebarOpen && 'justify-center'} gap-2`}
+                onClick={() => setActiveTab(tab.id)}
               >
                 <Icon name={tab.icon as any} size={18} />
                 {sidebarOpen && <span>{tab.label}</span>}
+                {tab.id === 'chats' && newChatNotifications.length > 0 && (
+                  <Badge variant="destructive" className="ml-auto">
+                    {newChatNotifications.length}
+                  </Badge>
+                )}
               </Button>
             ))}
           </div>
         </ScrollArea>
 
         <div className="p-4 border-t border-border space-y-3">
-          {(user.role === 'operator' || user.role === 'okk') && sidebarOpen && (
-            <Select value={operatorStatus} onValueChange={setOperatorStatus}>
-              <SelectTrigger className="w-full">
-                <div className="flex items-center gap-2">
-                  <div className={`w-2 h-2 rounded-full ${getStatusColor(operatorStatus)}`} />
+          {(user.role === 'operator' || user.role === 'okk') && (
+            <div className="space-y-2">
+              <Label className={!sidebarOpen ? 'sr-only' : ''}>Статус</Label>
+              <Select value={operatorStatus} onValueChange={(val) => setOperatorStatus(val as any)}>
+                <SelectTrigger className="w-full">
                   <SelectValue />
-                </div>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="online">
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-secondary" />
-                    На линии
-                  </div>
-                </SelectItem>
-                <SelectItem value="break">
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-yellow-500" />
-                    Перерыв
-                  </div>
-                </SelectItem>
-                <SelectItem value="lunch">
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-orange-500" />
-                    Обед
-                  </div>
-                </SelectItem>
-                <SelectItem value="training">
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-blue-500" />
-                    Обучение
-                  </div>
-                </SelectItem>
-                <SelectItem value="dnd">
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-destructive" />
-                    Не беспокоить
-                  </div>
-                </SelectItem>
-              </SelectContent>
-            </Select>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="online">На линии</SelectItem>
+                  <SelectItem value="break">Перерыв</SelectItem>
+                  <SelectItem value="lunch">Обед</SelectItem>
+                  <SelectItem value="training">Обучение</SelectItem>
+                  <SelectItem value="dnd">Не беспокоить</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           )}
-          
-          <div className={`flex items-center gap-3 ${!sidebarOpen && 'flex-col'}`}>
-            <Avatar className="w-10 h-10 bg-primary">
-              <AvatarFallback className="text-primary-foreground font-semibold">
-                {user.name.charAt(0).toUpperCase()}
-              </AvatarFallback>
-            </Avatar>
+
+          <div className="flex items-center gap-3">
             {sidebarOpen && (
               <div className="flex-1 min-w-0">
-                <h2 className="font-semibold text-foreground text-sm truncate">{user.name}</h2>
+                <p className="font-semibold text-sm truncate text-foreground">{user.name}</p>
                 <p className="text-xs text-muted-foreground truncate">{getRoleName(user.role)}</p>
               </div>
             )}
@@ -373,15 +490,20 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
                   <CardTitle className="flex items-center gap-2">
                     <Icon name="Users" size={20} />
                     Активные чаты с клиентами
+                    {newChatNotifications.length > 0 && (
+                      <Badge variant="destructive">
+                        {newChatNotifications.length} новых
+                      </Badge>
+                    )}
                   </CardTitle>
                   <CardDescription>
-                    Список текущих обращений • Новые чаты автоматически распределяются на операторов со статусом "На линии"
+                    Список текущих обращений • Новые чаты автоматически отображаются здесь
                   </CardDescription>
                   <div className="mt-4 p-3 rounded-lg bg-primary/10 border border-primary/20">
                     <div className="flex items-center gap-2 text-sm">
                       <Icon name="Info" size={16} className="text-primary" />
                       <span className="text-foreground">
-                        Автораспределение активно. Чаты назначаются оператору с наименьшей нагрузкой.
+                        Система чатов работает в реальном времени
                       </span>
                     </div>
                   </div>
@@ -389,10 +511,10 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
                 <CardContent>
                   <ScrollArea className="h-[500px]">
                     <div className="space-y-3">
-                      {chats.filter(c => c.status === 'active').map((chat) => (
+                      {chats.filter(c => c.status === 'active' || c.status === 'waiting').map((chat) => (
                         <div
                           key={chat.id}
-                          className="p-4 rounded-lg border border-border bg-card hover:shadow-md transition-shadow"
+                          className={`p-4 rounded-lg border ${newChatNotifications.includes(chat.id) ? 'border-destructive bg-destructive/5' : 'border-border bg-card'} hover:shadow-md transition-shadow`}
                         >
                           <div className="flex items-center gap-4 mb-3 cursor-pointer" onClick={() => handleOpenChat(chat.id)}>
                             <Avatar className="w-12 h-12 bg-secondary">
@@ -401,29 +523,52 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2">
                                 <h4 className="font-semibold text-foreground">{chat.client}</h4>
-                                {chat.unread > 0 && (
-                                  <Badge variant="default" className="text-xs">
-                                    {chat.unread}
+                                {newChatNotifications.includes(chat.id) && (
+                                  <Badge variant="destructive" className="text-xs">
+                                    НОВЫЙ
+                                  </Badge>
+                                )}
+                                {chat.status === 'waiting' && (
+                                  <Badge variant="outline" className="text-xs">
+                                    Ожидает
                                   </Badge>
                                 )}
                               </div>
-                              <p className="text-xs text-muted-foreground">{chat.phone}</p>
-                              <p className="text-sm text-muted-foreground truncate">{chat.lastMessage}</p>
+                              <p className="text-xs text-muted-foreground">{chat.phone || chat.email}</p>
+                              <p className="text-sm text-muted-foreground truncate">{chat.lastMessage || 'Нет сообщений'}</p>
                             </div>
                             <span className="text-xs text-muted-foreground">{chat.time}</span>
                           </div>
 
+                          {chat.status === 'waiting' && (
+                            <div className="mb-3">
+                              <Button 
+                                variant="default" 
+                                size="sm" 
+                                className="w-full"
+                                onClick={() => handleAcceptChat(chat.id)}
+                              >
+                                <Icon name="Check" size={14} className="mr-1" />
+                                Принять чат
+                              </Button>
+                            </div>
+                          )}
+
                           {openChatId === chat.id && (
                             <div className="mb-3 p-3 border border-border rounded-lg bg-muted/30">
                               <div className="space-y-2 max-h-60 overflow-y-auto mb-3">
-                                {chat.messages?.map((msg) => (
-                                  <div key={msg.id} className={`flex ${msg.sender === 'operator' ? 'justify-end' : 'justify-start'}`}>
-                                    <div className={`max-w-[70%] p-2 rounded-lg ${msg.sender === 'operator' ? 'bg-primary text-primary-foreground' : 'bg-card border border-border'}`}>
-                                      <p className="text-sm">{msg.text}</p>
-                                      <p className="text-xs opacity-70 mt-1">{msg.time}</p>
+                                {chat.messages?.length === 0 ? (
+                                  <p className="text-sm text-muted-foreground text-center py-4">Нет сообщений</p>
+                                ) : (
+                                  chat.messages?.map((msg: any) => (
+                                    <div key={msg.id} className={`flex ${msg.sender === 'operator' ? 'justify-end' : 'justify-start'}`}>
+                                      <div className={`max-w-[70%] p-2 rounded-lg ${msg.sender === 'operator' ? 'bg-primary text-primary-foreground' : 'bg-card border border-border'}`}>
+                                        <p className="text-sm">{msg.text}</p>
+                                        <p className="text-xs opacity-70 mt-1">{msg.time}</p>
+                                      </div>
                                     </div>
-                                  </div>
-                                ))}
+                                  ))
+                                )}
                               </div>
                               <div className="flex gap-2">
                                 <Input
@@ -439,696 +584,330 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
                             </div>
                           )}
                           
-                          <div className="flex gap-2 flex-wrap">
-                            <Dialog>
-                              <DialogTrigger asChild>
-                                <Button variant="default" size="sm" className="bg-secondary hover:bg-secondary/90" onClick={() => setSelectedChat(chat.id)}>
-                                  <Icon name="CheckCircle" size={14} className="mr-1" />
-                                  Завершить
-                                </Button>
-                              </DialogTrigger>
-                              <DialogContent>
-                                <DialogHeader>
-                                  <DialogTitle>Завершить чат</DialogTitle>
-                                  <DialogDescription>Укажите причину закрытия обращения</DialogDescription>
-                                </DialogHeader>
-                                <div className="space-y-4">
-                                  <Select value={closeReason} onValueChange={setCloseReason}>
-                                    <SelectTrigger>
-                                      <SelectValue placeholder="Выберите причину" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      <SelectItem value="resolved">Решено</SelectItem>
-                                      <SelectItem value="no_response">Нет ответа клиента</SelectItem>
-                                      <SelectItem value="spam">Спам</SelectItem>
-                                      <SelectItem value="duplicate">Дубликат</SelectItem>
-                                      <SelectItem value="other">Другое</SelectItem>
-                                    </SelectContent>
-                                  </Select>
-                                  <Button className="w-full" onClick={() => handleCloseChat(chat.id, closeReason)}>
-                                    Подтвердить закрытие
+                          {chat.status === 'active' && (
+                            <div className="flex gap-2 flex-wrap">
+                              <Dialog>
+                                <DialogTrigger asChild>
+                                  <Button variant="default" size="sm" className="bg-secondary hover:bg-secondary/90" onClick={() => setSelectedChat(chat.id)}>
+                                    <Icon name="CheckCircle" size={14} className="mr-1" />
+                                    Завершить
                                   </Button>
-                                </div>
-                              </DialogContent>
-                            </Dialog>
-
-                            <Dialog>
-                              <DialogTrigger asChild>
-                                <Button variant="outline" size="sm" onClick={() => setSelectedChat(chat.id)}>
-                                  <Icon name="Clock" size={14} className="mr-1" />
-                                  Отложить
-                                </Button>
-                              </DialogTrigger>
-                              <DialogContent>
-                                <DialogHeader>
-                                  <DialogTitle>Отложить чат</DialogTitle>
-                                  <DialogDescription>Выберите дату и время возврата чата</DialogDescription>
-                                </DialogHeader>
-                                <div className="space-y-4">
-                                  <div>
-                                    <Label>Дата</Label>
-                                    <Input type="date" value={postponeDate} onChange={(e) => setPostponeDate(e.target.value)} />
+                                </DialogTrigger>
+                                <DialogContent>
+                                  <DialogHeader>
+                                    <DialogTitle>Завершить чат</DialogTitle>
+                                    <DialogDescription>Укажите причину закрытия обращения</DialogDescription>
+                                  </DialogHeader>
+                                  <div className="space-y-4">
+                                    <Select value={closeReason} onValueChange={setCloseReason}>
+                                      <SelectTrigger>
+                                        <SelectValue placeholder="Выберите причину" />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="resolved">Решено</SelectItem>
+                                        <SelectItem value="no_response">Нет ответа клиента</SelectItem>
+                                        <SelectItem value="spam">Спам</SelectItem>
+                                        <SelectItem value="duplicate">Дубликат</SelectItem>
+                                        <SelectItem value="other">Другое</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                    <Button className="w-full" onClick={() => handleCloseChat(chat.id, closeReason)}>
+                                      Подтвердить закрытие
+                                    </Button>
                                   </div>
-                                  <div>
-                                    <Label>Время</Label>
-                                    <Input type="time" value={postponeTime} onChange={(e) => setPostponeTime(e.target.value)} />
+                                </DialogContent>
+                              </Dialog>
+
+                              <Dialog>
+                                <DialogTrigger asChild>
+                                  <Button variant="outline" size="sm" onClick={() => setSelectedChat(chat.id)}>
+                                    <Icon name="Clock" size={14} className="mr-1" />
+                                    Отложить
+                                  </Button>
+                                </DialogTrigger>
+                                <DialogContent>
+                                  <DialogHeader>
+                                    <DialogTitle>Отложить чат</DialogTitle>
+                                    <DialogDescription>Выберите дату и время возврата чата</DialogDescription>
+                                  </DialogHeader>
+                                  <div className="space-y-4">
+                                    <div>
+                                      <Label>Дата</Label>
+                                      <Input type="date" value={postponeDate} onChange={(e) => setPostponeDate(e.target.value)} />
+                                    </div>
+                                    <div>
+                                      <Label>Время</Label>
+                                      <Input type="time" value={postponeTime} onChange={(e) => setPostponeTime(e.target.value)} />
+                                    </div>
+                                    <Button className="w-full" onClick={() => handlePostponeChat(chat.id, postponeDate, postponeTime)}>
+                                      Отложить чат
+                                    </Button>
                                   </div>
-                                  <Button className="w-full" onClick={() => handlePostponeChat(chat.id, postponeDate, postponeTime)}>
-                                    Отложить чат
-                                  </Button>
-                                </div>
-                              </DialogContent>
-                            </Dialog>
+                                </DialogContent>
+                              </Dialog>
 
-                            <Button variant="outline" size="sm" onClick={() => handleEscalateChat(chat.id)}>
-                              <Icon name="AlertTriangle" size={14} className="mr-1" />
-                              Эскалировать
-                            </Button>
-
-                            <Dialog>
-                              <DialogTrigger asChild>
-                                <Button variant="outline" size="sm" onClick={() => setSelectedChat(chat.id)}>
-                                  <Icon name="UserCog" size={14} className="mr-1" />
-                                  Перевести
-                                </Button>
-                              </DialogTrigger>
-                              <DialogContent>
-                                <DialogHeader>
-                                  <DialogTitle>Перевести чат</DialogTitle>
-                                  <DialogDescription>Выберите оператора для передачи чата</DialogDescription>
-                                </DialogHeader>
-                                <div className="space-y-4">
-                                  <Select value={transferOperator} onValueChange={setTransferOperator}>
-                                    <SelectTrigger>
-                                      <SelectValue placeholder="Выберите оператора" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      <SelectItem value="op1">Оператор 1 (На линии)</SelectItem>
-                                      <SelectItem value="op2">Оператор 2 (На линии)</SelectItem>
-                                      <SelectItem value="op3">Оператор 3 (На линии)</SelectItem>
-                                    </SelectContent>
-                                  </Select>
-                                  <Button className="w-full" onClick={() => handleTransferChat(chat.id, transferOperator)}>
-                                    Перевести чат
-                                  </Button>
-                                </div>
-                              </DialogContent>
-                            </Dialog>
-                          </div>
+                              <Button variant="outline" size="sm" onClick={() => handleEscalateChat(chat.id)}>
+                                <Icon name="AlertTriangle" size={14} className="mr-1" />
+                                Эскалировать
+                              </Button>
+                            </div>
+                          )}
                         </div>
                       ))}
+                      {chats.filter(c => c.status === 'active' || c.status === 'waiting').length === 0 && (
+                        <div className="text-center py-12 text-muted-foreground">
+                          <Icon name="MessageSquare" size={48} className="mx-auto mb-3 opacity-30" />
+                          <p>Нет активных чатов</p>
+                        </div>
+                      )}
                     </div>
                   </ScrollArea>
                 </CardContent>
               </Card>
             </div>
+          )}
+
+          {hasAccess('clientsDatabase') && activeTab === 'clientsDatabase' && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Icon name="Database" size={20} />
+                  База данных клиентов
+                </CardTitle>
+                <CardDescription>
+                  Информация о всех клиентах, которые обращались в поддержку
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ScrollArea className="h-[600px]">
+                  <div className="space-y-3">
+                    {clients.map((client) => (
+                      <div key={client.id} className="p-4 rounded-lg border border-border bg-card">
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <Label className="text-xs text-muted-foreground">Имя</Label>
+                            <p className="text-sm font-medium">{client.name || 'Не указано'}</p>
+                          </div>
+                          <div>
+                            <Label className="text-xs text-muted-foreground">Email</Label>
+                            <p className="text-sm font-medium">{client.email || 'Не указано'}</p>
+                          </div>
+                          <div>
+                            <Label className="text-xs text-muted-foreground">Телефон</Label>
+                            <p className="text-sm font-medium">{client.phone || 'Не указано'}</p>
+                          </div>
+                          <div>
+                            <Label className="text-xs text-muted-foreground">IP-адрес</Label>
+                            <p className="text-sm font-medium font-mono">{client.ipAddress}</p>
+                          </div>
+                          <div>
+                            <Label className="text-xs text-muted-foreground">Первое обращение</Label>
+                            <p className="text-sm">{new Date(client.createdAt).toLocaleString('ru-RU')}</p>
+                          </div>
+                          <div>
+                            <Label className="text-xs text-muted-foreground">Последнее обращение</Label>
+                            <p className="text-sm">{new Date(client.lastSeen).toLocaleString('ru-RU')}</p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                    {clients.length === 0 && (
+                      <div className="text-center py-12 text-muted-foreground">
+                        <Icon name="Database" size={48} className="mx-auto mb-3 opacity-30" />
+                        <p>Нет данных о клиентах</p>
+                      </div>
+                    )}
+                  </div>
+                </ScrollArea>
+              </CardContent>
+            </Card>
+          )}
+
+          {hasAccess('employeeManagement') && activeTab === 'employees' && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Icon name="Users" size={20} />
+                  Управление сотрудниками
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {employees.map((employee) => (
+                    <div key={employee.id} className="p-4 rounded-lg border border-border bg-card flex items-center justify-between">
+                      <div className="flex items-center gap-4">
+                        <Avatar className="w-12 h-12 bg-secondary">
+                          <AvatarFallback>{employee.name.charAt(0)}</AvatarFallback>
+                        </Avatar>
+                        <div>
+                          <h4 className="font-semibold">{employee.name}</h4>
+                          <p className="text-xs text-muted-foreground">{getRoleName(employee.role)}</p>
+                          <Badge className={`mt-1 ${getStatusColor(employee.status)}`}>
+                            {getStatusName(employee.status)}
+                          </Badge>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <Select 
+                          value={employee.status} 
+                          onValueChange={(val) => handleEmployeeStatusChange(employee.id, val as any)}
+                        >
+                          <SelectTrigger className="w-40">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="online">На линии</SelectItem>
+                            <SelectItem value="break">Перерыв</SelectItem>
+                            <SelectItem value="lunch">Обед</SelectItem>
+                            <SelectItem value="training">Обучение</SelectItem>
+                            <SelectItem value="dnd">Не беспокоить</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
           )}
 
           {hasAccess('myScores') && activeTab === 'myScores' && (
-            <div>
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Icon name="Award" size={20} />
-                    Мои оценки QC
-                  </CardTitle>
-                  <CardDescription>Результаты проверки качества работы</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    {mockQCScores.map((score, idx) => (
-                      <div
-                        key={idx}
-                        className="p-4 rounded-lg border border-border bg-card hover:shadow-md transition-shadow"
-                      >
-                        <div className="flex items-start justify-between mb-2">
-                          <div>
-                            <h4 className="font-semibold text-foreground">{score.category}</h4>
-                            <p className="text-xs text-muted-foreground">{score.date}</p>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span
-                              className={`text-2xl font-bold ${
-                                score.score >= 90
-                                  ? 'text-secondary'
-                                  : score.score >= 80
-                                  ? 'text-primary'
-                                  : 'text-muted-foreground'
-                              }`}
-                            >
-                              {score.score}
-                            </span>
-                            <Icon
-                              name={score.score >= 90 ? 'ThumbsUp' : 'CheckCircle'}
-                              size={20}
-                              className={score.score >= 90 ? 'text-secondary' : 'text-primary'}
-                            />
-                          </div>
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Icon name="BarChart3" size={20} />
+                  Мои оценки ОКК
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {mockQCScores.map((score, idx) => (
+                    <div key={idx} className="p-4 rounded-lg border border-border bg-card">
+                      <div className="flex items-center justify-between mb-2">
+                        <div>
+                          <h4 className="font-semibold">{score.category}</h4>
+                          <p className="text-xs text-muted-foreground">{score.date}</p>
                         </div>
-                        <p className="text-sm text-muted-foreground">{score.comment}</p>
+                        <div className="text-right">
+                          <div className="text-2xl font-bold text-secondary">{score.score}%</div>
+                        </div>
                       </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
+                      <Progress value={score.score} className="h-2" />
+                      <p className="text-sm text-muted-foreground mt-2">{score.comment}</p>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
           )}
 
           {hasAccess('results') && activeTab === 'results' && (
-            <div>
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Icon name="BarChart3" size={20} />
-                    Результаты работы
-                  </CardTitle>
-                  <CardDescription>Статистика и показатели эффективности</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-6">
-                    {mockResults.map((result, idx) => (
-                      <div key={idx} className="space-y-2">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <h4 className="font-semibold text-foreground">{result.metric}</h4>
-                            <p className="text-xs text-muted-foreground">{result.period}</p>
-                          </div>
-                          <div className="text-right">
-                            <span className="text-2xl font-bold text-primary">{result.value}</span>
-                            <span className="text-sm text-muted-foreground"> / {result.target}</span>
-                          </div>
-                        </div>
-                        <Progress value={(result.value / result.target) * 100} className="h-2" />
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Icon name="TrendingUp" size={20} />
+                  Мои результаты
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid gap-4 md:grid-cols-3">
+                  {mockResults.map((result, idx) => (
+                    <div key={idx} className="p-4 rounded-lg border border-border bg-card">
+                      <p className="text-xs text-muted-foreground mb-1">{result.metric}</p>
+                      <div className="text-2xl font-bold text-foreground">{result.value}</div>
+                      <div className="flex items-center gap-2 mt-2">
+                        <Progress value={(result.value / result.target) * 100} className="h-2 flex-1" />
+                        <span className="text-xs text-muted-foreground">{result.target}</span>
                       </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
+                      <p className="text-xs text-muted-foreground mt-1">{result.period}</p>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
           )}
 
           {hasAccess('jira') && activeTab === 'jira' && (
-            <div>
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Icon name="Ticket" size={20} />
-                    Портал Jira
-                  </CardTitle>
-                  <CardDescription>Создавайте и отслеживайте задания</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    <div className="bg-muted p-4 rounded-lg">
-                      <h4 className="font-semibold mb-3 flex items-center gap-2">
-                        <Icon name="Plus" size={18} />
-                        Создать новое задание
-                      </h4>
-                      <div className="space-y-3">
-                        <Input placeholder="Название задания" />
-                        <Textarea placeholder="Описание задания" rows={3} />
-                        <Button className="w-full">
-                          <Icon name="Send" size={16} className="mr-2" />
-                          Создать задание
-                        </Button>
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Icon name="ListTodo" size={20} />
+                  Jira задачи
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {jiraTasks.map((task) => (
+                    <div key={task.id} className="p-4 rounded-lg border border-border bg-card">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <code className="text-xs bg-muted px-2 py-1 rounded">{task.id}</code>
+                          <h4 className="font-semibold">{task.title}</h4>
+                        </div>
+                        <Badge className={getPriorityColor(task.priority)}>
+                          {getPriorityLabel(task.priority)}
+                        </Badge>
+                      </div>
+                      <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                        <span>Статус: {task.status}</span>
+                        <span>Исполнитель: {task.assignee}</span>
                       </div>
                     </div>
-
-                    <div className="space-y-3">
-                      <h4 className="font-semibold flex items-center gap-2">
-                        <Icon name="List" size={18} />
-                        Мои задания
-                      </h4>
-                      {jiraTasks.map((task) => (
-                        <div
-                          key={task.id}
-                          className="p-4 rounded-lg border border-border bg-card hover:shadow-md transition-shadow"
-                        >
-                          <div className="flex items-start justify-between mb-2">
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2 mb-1">
-                                <span className="text-xs font-mono text-muted-foreground">{task.id}</span>
-                              </div>
-                              <h4 className="font-semibold text-foreground">{task.title}</h4>
-                              <p className="text-xs text-muted-foreground mt-1">Исполнитель: {task.assignee}</p>
-                            </div>
-                            <Badge variant="outline">{task.status}</Badge>
-                          </div>
-                          <div className="flex items-center gap-2 mt-3">
-                            <span className="text-xs text-muted-foreground">Приоритет:</span>
-                            <Select value={task.priority} onValueChange={(val: any) => handleTaskPriorityChange(task.id, val)}>
-                              <SelectTrigger className="h-7 w-32">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="high">
-                                  <div className="flex items-center gap-2">
-                                    <div className="w-2 h-2 rounded-full bg-destructive" />
-                                    Высокий
-                                  </div>
-                                </SelectItem>
-                                <SelectItem value="medium">
-                                  <div className="flex items-center gap-2">
-                                    <div className="w-2 h-2 rounded-full bg-yellow-500" />
-                                    Средний
-                                  </div>
-                                </SelectItem>
-                                <SelectItem value="low">
-                                  <div className="flex items-center gap-2">
-                                    <div className="w-2 h-2 rounded-full bg-blue-500" />
-                                    Низкий
-                                  </div>
-                                </SelectItem>
-                              </SelectContent>
-                            </Select>
-                            <Badge className={getPriorityColor(task.priority)}>
-                              {getPriorityLabel(task.priority)}
-                            </Badge>
-                          </div>
-                          {user.role === 'okk' || user.role === 'admin' ? (
-                            <Button variant="outline" size="sm" className="mt-2">
-                              <Icon name="Edit" size={14} className="mr-1" />
-                              Обработать
-                            </Button>
-                          ) : null}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
           )}
 
           {hasAccess('knowledge') && activeTab === 'knowledge' && (
-            <div>
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Icon name="BookOpen" size={20} />
-                    База знаний
-                  </CardTitle>
-                  <CardDescription>Инструкции и руководства для работы</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="mb-4">
-                    <Input placeholder="Поиск в базе знаний..." className="w-full" />
-                  </div>
-                  <div className="space-y-3">
-                    {mockKnowledge.map((item) => (
-                      <div
-                        key={item.id}
-                        className="p-4 rounded-lg border border-border bg-card hover:shadow-md transition-shadow cursor-pointer"
-                      >
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1">
-                            <h4 className="font-semibold text-foreground mb-1">{item.title}</h4>
-                            <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                              <Badge variant="outline">{item.category}</Badge>
-                              <span className="flex items-center gap-1">
-                                <Icon name="Eye" size={12} />
-                                {item.views} просмотров
-                              </span>
-                            </div>
-                          </div>
-                          <Icon name="ChevronRight" size={20} className="text-muted-foreground" />
-                        </div>
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Icon name="BookOpen" size={20} />
+                  База знаний
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {mockKnowledge.map((article) => (
+                    <div key={article.id} className="p-4 rounded-lg border border-border bg-card hover:shadow-md transition-shadow cursor-pointer">
+                      <h4 className="font-semibold mb-1">{article.title}</h4>
+                      <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                        <span>{article.category}</span>
+                        <span>Просмотры: {article.views}</span>
                       </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
           )}
 
           {hasAccess('news') && activeTab === 'news' && (
-            <div>
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Icon name="Megaphone" size={20} />
-                    Новости и объявления
-                  </CardTitle>
-                  <CardDescription>Важная информация для сотрудников</CardDescription>
-                  {user.role === 'admin' && (
-                    <Button className="mt-4">
-                      <Icon name="Plus" size={16} className="mr-2" />
-                      Добавить новость
-                    </Button>
-                  )}
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    {mockNews.map((news) => (
-                      <div
-                        key={news.id}
-                        className="p-4 rounded-lg border border-border bg-card hover:shadow-md transition-shadow"
-                      >
-                        <div className="flex items-start justify-between mb-2">
-                          <h4 className="font-semibold text-foreground">{news.title}</h4>
-                          <span className="text-xs text-muted-foreground">{news.date}</span>
-                        </div>
-                        <p className="text-sm text-muted-foreground mb-2">{news.text}</p>
-                        <p className="text-xs text-muted-foreground">Автор: {news.author}</p>
-                        {user.role === 'admin' && (
-                          <div className="flex gap-2 mt-3">
-                            <Button variant="outline" size="sm">
-                              <Icon name="Edit" size={14} className="mr-1" />
-                              Изменить
-                            </Button>
-                            <Button variant="outline" size="sm">
-                              <Icon name="Trash2" size={14} className="mr-1" />
-                              Удалить
-                            </Button>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          )}
-
-          {hasAccess('qcPortal') && activeTab === 'qcPortal' && (
-            <div>
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Icon name="ClipboardCheck" size={20} />
-                    Портал QC
-                  </CardTitle>
-                  <CardDescription>Оценка качества работы операторов</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    <div className="bg-muted p-4 rounded-lg">
-                      <h4 className="font-semibold mb-3 flex items-center gap-2">
-                        <Icon name="Plus" size={18} />
-                        Добавить оценку
-                      </h4>
-                      <div className="space-y-3">
-                        <Input placeholder="Выберите оператора" />
-                        <Input placeholder="Категория оценки" />
-                        <Input type="number" placeholder="Балл (0-100)" />
-                        <Textarea placeholder="Комментарий" rows={3} />
-                        <Button className="w-full">
-                          <Icon name="Save" size={16} className="mr-2" />
-                          Сохранить оценку
-                        </Button>
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Icon name="Newspaper" size={20} />
+                  Новости компании
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {mockNews.map((news) => (
+                    <div key={news.id} className="p-4 rounded-lg border border-border bg-card">
+                      <h4 className="font-semibold mb-1">{news.title}</h4>
+                      <p className="text-sm text-muted-foreground mb-2">{news.text}</p>
+                      <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                        <span>{news.date}</span>
+                        <span>{news.author}</span>
                       </div>
                     </div>
-
-                    <div className="space-y-3">
-                      <h4 className="font-semibold flex items-center gap-2">
-                        <Icon name="History" size={18} />
-                        Последние оценки
-                      </h4>
-                      {mockQCScores.map((score, idx) => (
-                        <div
-                          key={idx}
-                          className="p-4 rounded-lg border border-border bg-card hover:shadow-md transition-shadow"
-                        >
-                          <div className="flex items-start justify-between">
-                            <div className="flex-1">
-                              <h4 className="font-semibold text-foreground">{score.category}</h4>
-                              <p className="text-xs text-muted-foreground">
-                                {score.operator} • {score.date}
-                              </p>
-                              <p className="text-sm text-muted-foreground mt-1">{score.comment}</p>
-                            </div>
-                            <span className="text-2xl font-bold text-primary">{score.score}</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
           )}
 
-          {hasAccess('monitoring') && activeTab === 'monitoring' && (
-            <div>
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Icon name="Monitor" size={20} />
-                    Мониторинг операторов
-                  </CardTitle>
-                  <CardDescription>Текущая активность и показатели</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    {employees.map((emp) => (
-                      <div
-                        key={emp.id}
-                        className="p-4 rounded-lg border border-border bg-card hover:shadow-md transition-shadow"
-                      >
-                        <div className="flex items-center gap-4">
-                          <Avatar className="w-12 h-12 bg-primary">
-                            <AvatarFallback>{emp.name.charAt(0)}</AvatarFallback>
-                          </Avatar>
-                          <div className="flex-1 grid grid-cols-2 md:grid-cols-5 gap-4">
-                            <div>
-                              <p className="font-semibold text-foreground">{emp.name}</p>
-                              <p className="text-xs text-muted-foreground">{getRoleName(emp.role)}</p>
-                            </div>
-                            <div>
-                              <Select value={emp.status} onValueChange={(val: any) => handleEmployeeStatusChange(emp.id, val)}>
-                                <SelectTrigger className="h-8">
-                                  <div className="flex items-center gap-2">
-                                    <div className={`w-2 h-2 rounded-full ${getStatusColor(emp.status)}`} />
-                                    <SelectValue />
-                                  </div>
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="online">
-                                    <div className="flex items-center gap-2">
-                                      <div className="w-2 h-2 rounded-full bg-secondary" />
-                                      На линии
-                                    </div>
-                                  </SelectItem>
-                                  <SelectItem value="break">
-                                    <div className="flex items-center gap-2">
-                                      <div className="w-2 h-2 rounded-full bg-yellow-500" />
-                                      Перерыв
-                                    </div>
-                                  </SelectItem>
-                                  <SelectItem value="lunch">
-                                    <div className="flex items-center gap-2">
-                                      <div className="w-2 h-2 rounded-full bg-orange-500" />
-                                      Обед
-                                    </div>
-                                  </SelectItem>
-                                  <SelectItem value="training">
-                                    <div className="flex items-center gap-2">
-                                      <div className="w-2 h-2 rounded-full bg-blue-500" />
-                                      Обучение
-                                    </div>
-                                  </SelectItem>
-                                  <SelectItem value="dnd">
-                                    <div className="flex items-center gap-2">
-                                      <div className="w-2 h-2 rounded-full bg-destructive" />
-                                      Не беспокоить
-                                    </div>
-                                  </SelectItem>
-                                </SelectContent>
-                              </Select>
-                            </div>
-                            <div>
-                              <p className="text-xs text-muted-foreground">Активных чатов</p>
-                              <p className="text-lg font-bold text-foreground">{emp.chats}</p>
-                            </div>
-                            <div>
-                              <p className="text-xs text-muted-foreground">Средний балл</p>
-                              <p className="text-lg font-bold text-secondary">{emp.avgScore}</p>
-                            </div>
-                            <div>
-                              <p className="text-xs text-muted-foreground">Время ответа</p>
-                              <p className="text-lg font-bold text-primary">{emp.responseTime} мин</p>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          )}
-
-          {hasAccess('allChats') && activeTab === 'allChats' && (
-            <div>
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Icon name="Database" size={20} />
-                    Все чаты системы
-                  </CardTitle>
-                  <CardDescription>Полный список всех обращений клиентов</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="mb-4 flex gap-2">
-                    <Input placeholder="Поиск по клиенту, телефону..." className="flex-1" />
-                    <Button variant="outline">
-                      <Icon name="Filter" size={16} className="mr-2" />
-                      Фильтры
-                    </Button>
-                  </div>
-                  <ScrollArea className="h-[500px]">
-                    <div className="space-y-3">
-                      {mockChats.map((chat) => (
-                        <div
-                          key={chat.id}
-                          className="flex items-center gap-4 p-4 rounded-lg border border-border bg-card hover:shadow-md transition-shadow cursor-pointer"
-                        >
-                          <Avatar className="w-12 h-12 bg-secondary">
-                            <AvatarFallback>{chat.client.charAt(0)}</AvatarFallback>
-                          </Avatar>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1">
-                              <h4 className="font-semibold text-foreground">{chat.client}</h4>
-                              <Badge variant={chat.status === 'active' ? 'default' : 'secondary'}>
-                                {chat.status === 'active' ? 'Активный' : 'Закрыт'}
-                              </Badge>
-                              {chat.unread > 0 && (
-                                <Badge variant="destructive" className="text-xs">
-                                  {chat.unread}
-                                </Badge>
-                              )}
-                            </div>
-                            <p className="text-xs text-muted-foreground mb-1">{chat.phone}</p>
-                            <p className="text-sm text-muted-foreground truncate">{chat.lastMessage}</p>
-                          </div>
-                          <div className="text-right">
-                            <span className="text-xs text-muted-foreground block mb-2">{chat.time}</span>
-                            <Button variant="ghost" size="sm">
-                              <Icon name="ExternalLink" size={14} />
-                            </Button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </ScrollArea>
-                </CardContent>
-              </Card>
-            </div>
-          )}
-
-          {hasAccess('employeeManagement') && activeTab === 'employeeManagement' && (
-            <div>
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Icon name="UserCog" size={20} />
-                    Управление сотрудниками
-                  </CardTitle>
-                  <CardDescription>Управление учетными записями и ролями</CardDescription>
-                  <Button className="mt-4">
-                    <Icon name="UserPlus" size={16} className="mr-2" />
-                    Добавить сотрудника
-                  </Button>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    {employees.map((emp) => (
-                      <div
-                        key={emp.id}
-                        className="p-4 rounded-lg border border-border bg-card hover:shadow-md transition-shadow"
-                      >
-                        <div className="flex items-center gap-4">
-                          <Avatar className="w-12 h-12 bg-primary">
-                            <AvatarFallback>{emp.name.charAt(0)}</AvatarFallback>
-                          </Avatar>
-                          <div className="flex-1">
-                            <h4 className="font-semibold text-foreground">{emp.name}</h4>
-                            <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
-                              <span>Логин: {emp.username}</span>
-                              <span>•</span>
-                              <span>Пароль: {emp.password}</span>
-                            </div>
-                            <Badge variant="outline" className="mt-2">
-                              {emp.role === 'operator'
-                                ? 'Оператор КЦ'
-                                : emp.role === 'okk'
-                                ? 'ОКК'
-                                : 'Администратор'}
-                            </Badge>
-                          </div>
-                          <div className="flex gap-2">
-                            <Button variant="outline" size="sm">
-                              <Icon name="Edit" size={14} className="mr-1" />
-                              Изменить
-                            </Button>
-                            <Button variant="outline" size="sm">
-                              <Icon name="Trash2" size={14} className="mr-1" />
-                              Удалить
-                            </Button>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          )}
-
-          {hasAccess('corporateChats') && activeTab === 'corporateChats' && (
-            <div>
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Icon name="Building2" size={20} />
-                    Корпоративные чаты
-                  </CardTitle>
-                  <CardDescription>Внутренние чаты команды (только администратор)</CardDescription>
-                  <Button className="mt-4">
-                    <Icon name="Plus" size={16} className="mr-2" />
-                    Создать новый чат
-                  </Button>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    {corporateChats.map((chat) => (
-                      <div
-                        key={chat.id}
-                        className="p-4 rounded-lg border border-border bg-card hover:shadow-md transition-shadow cursor-pointer"
-                      >
-                        <div className="flex items-center gap-4">
-                          <div className="w-12 h-12 rounded-full bg-secondary flex items-center justify-center">
-                            <Icon name="Users" size={24} className="text-secondary-foreground" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1">
-                              <h4 className="font-semibold text-foreground">{chat.title}</h4>
-                              <Badge variant="secondary">{chat.members} участников</Badge>
-                            </div>
-                            <p className="text-sm text-muted-foreground truncate">{chat.lastMessage}</p>
-                          </div>
-                          <div className="text-right">
-                            <span className="text-xs text-muted-foreground block mb-2">{chat.time}</span>
-                            <div className="flex gap-1">
-                              <Button variant="ghost" size="sm">
-                                <Icon name="MessageSquare" size={14} />
-                              </Button>
-                              <Button variant="ghost" size="sm">
-                                <Icon name="UserPlus" size={14} />
-                              </Button>
-                              <Button variant="ghost" size="sm">
-                                <Icon name="Settings" size={14} />
-                              </Button>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          )}
         </div>
       </main>
     </div>

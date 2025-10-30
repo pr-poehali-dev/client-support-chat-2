@@ -1,0 +1,23 @@
+{
+  "tests": [
+    {
+      "name": "Получение списка чатов",
+      "method": "GET",
+      "path": "/?action=list",
+      "expectedStatus": 200
+    },
+    {
+      "name": "Создание нового чата",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "action": "startChat",
+        "ipAddress": "192.168.1.100",
+        "name": "Тестовый клиент",
+        "email": "test@example.com",
+        "phone": "+79991234567"
+      },
+      "expectedStatus": 200
+    }
+  ]
+}

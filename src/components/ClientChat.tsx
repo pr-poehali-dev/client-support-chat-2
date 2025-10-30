@@ -1,9 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import Icon from '@/components/ui/icon';
+
+const CHAT_API_URL = 'https://functions.poehali.dev/a33a1e04-98e5-4c92-8585-2a7f74db1d36';
 
 interface User {
   name: string;
@@ -16,6 +18,7 @@ interface Message {
   id: number;
   text: string;
   sender: 'client' | 'support';
+  senderName?: string;
   time: string;
 }
 
@@ -24,41 +27,133 @@ interface ClientChatProps {
   onLogout: () => void;
 }
 
+const getClientIP = async (): Promise<string> => {
+  try {
+    const response = await fetch('https://api.ipify.org?format=json');
+    const data = await response.json();
+    return data.ip;
+  } catch {
+    return 'unknown';
+  }
+};
+
 const ClientChat = ({ user, onLogout }: ClientChatProps) => {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: 1,
-      text: `Здравствуйте, ${user.name}! Чем могу помочь?`,
-      sender: 'support',
-      time: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }),
-    },
-  ]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
+  const [chatId, setChatId] = useState<number | null>(null);
+  const [ipAddress, setIpAddress] = useState<string>('');
+  const [loading, setLoading] = useState(true);
 
-  const handleSendMessage = (e: React.FormEvent) => {
+  useEffect(() => {
+    const initChat = async () => {
+      const ip = await getClientIP();
+      setIpAddress(ip);
+
+      try {
+        const response = await fetch(CHAT_API_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            action: 'startChat',
+            ipAddress: ip,
+            name: user.name,
+            email: user.email,
+            phone: user.phone,
+          }),
+        });
+
+        const data = await response.json();
+        setChatId(data.chatId);
+
+        const messagesResponse = await fetch(
+          `${CHAT_API_URL}?action=messages&chatId=${data.chatId}`
+        );
+        const messagesData = await messagesResponse.json();
+
+        const loadedMessages = messagesData.messages.map((msg: any) => ({
+          id: msg.id,
+          text: msg.text,
+          sender: msg.senderType === 'client' ? 'client' : 'support',
+          senderName: msg.senderName,
+          time: new Date(msg.createdAt).toLocaleTimeString('ru-RU', {
+            hour: '2-digit',
+            minute: '2-digit',
+          }),
+        }));
+
+        setMessages(loadedMessages);
+      } catch (error) {
+        console.error('Failed to initialize chat:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    initChat();
+  }, [user]);
+
+  useEffect(() => {
+    if (!chatId) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const response = await fetch(`${CHAT_API_URL}?action=messages&chatId=${chatId}`);
+        const data = await response.json();
+
+        const loadedMessages = data.messages.map((msg: any) => ({
+          id: msg.id,
+          text: msg.text,
+          sender: msg.senderType === 'client' ? 'client' : 'support',
+          senderName: msg.senderName,
+          time: new Date(msg.createdAt).toLocaleTimeString('ru-RU', {
+            hour: '2-digit',
+            minute: '2-digit',
+          }),
+        }));
+
+        setMessages(loadedMessages);
+      } catch (error) {
+        console.error('Failed to fetch messages:', error);
+      }
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [chatId]);
+
+  const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (newMessage.trim()) {
-      const now = new Date();
-      const newMsg: Message = {
-        id: messages.length + 1,
-        text: newMessage,
-        sender: 'client',
-        time: now.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }),
-      };
-      setMessages([...messages, newMsg]);
-      setNewMessage('');
+    if (!newMessage.trim() || !chatId) return;
 
-      setTimeout(() => {
-        const supportMsg: Message = {
-          id: messages.length + 2,
-          text: 'Спасибо за сообщение! Специалист ответит в ближайшее время.',
-          sender: 'support',
-          time: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }),
-        };
-        setMessages((prev) => [...prev, supportMsg]);
-      }, 1500);
+    try {
+      await fetch(CHAT_API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'sendMessage',
+          chatId,
+          senderType: 'client',
+          senderName: user.name,
+          message: newMessage,
+        }),
+      });
+
+      setNewMessage('');
+    } catch (error) {
+      console.error('Failed to send message:', error);
     }
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background dark flex items-center justify-center">
+        <div className="text-muted-foreground">Загрузка чата...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background dark flex flex-col">
@@ -81,6 +176,11 @@ const ClientChat = ({ user, onLogout }: ClientChatProps) => {
 
       <ScrollArea className="flex-1 p-4">
         <div className="max-w-3xl mx-auto space-y-4">
+          {messages.length === 0 && (
+            <div className="text-center text-muted-foreground py-8">
+              Начните общение с оператором
+            </div>
+          )}
           {messages.map((message) => (
             <div
               key={message.id}
