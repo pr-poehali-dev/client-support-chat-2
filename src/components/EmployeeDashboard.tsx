@@ -250,12 +250,6 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
     return colorMap[status] || 'bg-muted';
   };
 
-  const [employees, setEmployees] = useState([
-    { id: 1, username: 'operator', password: 'operator', name: 'Оператор КЦ', role: 'operator' },
-    { id: 2, username: 'okk', password: 'okk', name: 'Сотрудник ОКК', role: 'okk' },
-    { id: 3, username: 'admin', password: 'admin', name: 'Администратор', role: 'admin' },
-  ]);
-
   const [corporateChats, setCorporateChats] = useState([
     { id: 1, title: 'Общий чат команды', members: 12, lastMessage: 'Всем хорошего дня!', time: '14:30' },
     { id: 2, title: 'Обновления системы', members: 8, lastMessage: 'Новая версия доступна', time: '12:15' },
