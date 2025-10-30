@@ -165,7 +165,7 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
                 <p className="text-xs text-muted-foreground">{getRoleName(user.role)}</p>
               </div>
               {(user.role === 'operator' || user.role === 'okk') && (
-                <Select value={operatorStatus} onValueChange={(val: any) => setOperatorStatus(val)}>
+                <Select value={operatorStatus} onValueChange={setOperatorStatus}>
                   <SelectTrigger className="w-[160px] h-9">
                     <div className="flex items-center gap-2">
                       <div className={`w-2 h-2 rounded-full ${getStatusColor(operatorStatus)}`} />
