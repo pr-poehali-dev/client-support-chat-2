@@ -245,9 +245,10 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             elif action == 'closedChats':
                 cur.execute('''
                     SELECT c.id, c.status, c.assigned_operator, c.created_at, c.updated_at,
-                           c.client_name, c.email, c.phone, c.ip_address,
+                           cl.name as client_name, cl.email, cl.phone, cl.ip_address,
                            r.id as rating_id, r.score as rating_score
                     FROM chats c
+                    LEFT JOIN clients cl ON c.client_id = cl.id
                     LEFT JOIN ratings r ON c.id = r.chat_id
                     WHERE c.status = 'closed'
                     ORDER BY c.updated_at DESC
@@ -314,6 +315,145 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     'isBase64Encoded': False,
                     'body': json.dumps({'ratings': result})
                 }
+            
+            elif action == 'corporateChats':
+                employee_name = event.get('queryStringParameters', {}).get('employeeName', '')
+                
+                if not employee_name:
+                    return {
+                        'statusCode': 400,
+                        'headers': headers,
+                        'isBase64Encoded': False,
+                        'body': json.dumps({'error': 'employeeName required'})
+                    }
+                
+                cur.execute('''
+                    SELECT id, title, created_by, created_at, updated_at
+                    FROM corporate_chats
+                    WHERE created_by = %s OR id IN (
+                        SELECT DISTINCT chat_id FROM corporate_messages WHERE sender_name = %s
+                    )
+                    ORDER BY updated_at DESC
+                ''', (employee_name, employee_name))
+                chats = cur.fetchall()
+                
+                result = []
+                for chat in chats:
+                    result.append({
+                        'id': chat['id'],
+                        'title': chat['title'],
+                        'createdBy': chat['created_by'],
+                        'createdAt': chat['created_at'].isoformat() if chat['created_at'] else None,
+                        'updatedAt': chat['updated_at'].isoformat() if chat['updated_at'] else None
+                    })
+                
+                return {
+                    'statusCode': 200,
+                    'headers': headers,
+                    'isBase64Encoded': False,
+                    'body': json.dumps({'chats': result})
+                }
+            
+            elif action == 'corporateMessages':
+                chat_id = event.get('queryStringParameters', {}).get('chatId', '')
+                
+                if not chat_id:
+                    return {
+                        'statusCode': 400,
+                        'headers': headers,
+                        'isBase64Encoded': False,
+                        'body': json.dumps({'error': 'chatId required'})
+                    }
+                
+                cur.execute('''
+                    SELECT id, sender_name, message_text, created_at
+                    FROM corporate_messages
+                    WHERE chat_id = %s
+                    ORDER BY created_at ASC
+                ''', (int(chat_id),))
+                messages = cur.fetchall()
+                
+                result = []
+                for msg in messages:
+                    result.append({
+                        'id': msg['id'],
+                        'senderName': msg['sender_name'],
+                        'text': msg['message_text'],
+                        'createdAt': msg['created_at'].isoformat() if msg['created_at'] else None
+                    })
+                
+                return {
+                    'statusCode': 200,
+                    'headers': headers,
+                    'isBase64Encoded': False,
+                    'body': json.dumps({'messages': result})
+                }
+            
+            elif action == 'news':
+                cur.execute('''
+                    SELECT id, title, content, author, created_at, published_at
+                    FROM news
+                    ORDER BY published_at DESC, created_at DESC
+                ''')
+                news_items = cur.fetchall()
+                
+                result = []
+                for item in news_items:
+                    result.append({
+                        'id': item['id'],
+                        'title': item['title'],
+                        'content': item['content'],
+                        'author': item['author'],
+                        'createdAt': item['created_at'].isoformat() if item['created_at'] else None,
+                        'publishedAt': item['published_at'].isoformat() if item['published_at'] else None
+                    })
+                
+                return {
+                    'statusCode': 200,
+                    'headers': headers,
+                    'isBase64Encoded': False,
+                    'body': json.dumps({'news': result})
+                }
+            
+            elif action == 'allChats':
+                cur.execute('''
+                    SELECT c.id, c.status, c.assigned_operator, c.created_at, c.updated_at,
+                           c.assigned_at, c.deadline, c.extension_requested, c.extension_deadline,
+                           cl.name as client_name, cl.email, cl.phone, cl.ip_address,
+                           cr.score as client_rating_score, cr.comment as client_rating_comment
+                    FROM chats c
+                    LEFT JOIN clients cl ON c.client_id = cl.id
+                    LEFT JOIN client_ratings cr ON c.id = cr.chat_id
+                    ORDER BY c.updated_at DESC
+                ''')
+                chats = cur.fetchall()
+                
+                result = []
+                for chat in chats:
+                    result.append({
+                        'id': chat['id'],
+                        'status': chat['status'],
+                        'assignedOperator': chat['assigned_operator'],
+                        'clientName': chat['client_name'] or 'Клиент',
+                        'email': chat['email'] or '',
+                        'phone': chat['phone'] or '',
+                        'ipAddress': chat['ip_address'] or '',
+                        'createdAt': chat['created_at'].isoformat() if chat['created_at'] else None,
+                        'updatedAt': chat['updated_at'].isoformat() if chat['updated_at'] else None,
+                        'assignedAt': chat['assigned_at'].isoformat() if chat['assigned_at'] else None,
+                        'deadline': chat['deadline'].isoformat() if chat['deadline'] else None,
+                        'extensionRequested': chat['extension_requested'] or False,
+                        'extensionDeadline': chat['extension_deadline'].isoformat() if chat['extension_deadline'] else None,
+                        'clientRatingScore': chat['client_rating_score'],
+                        'clientRatingComment': chat['client_rating_comment'] or ''
+                    })
+                
+                return {
+                    'statusCode': 200,
+                    'headers': headers,
+                    'isBase64Encoded': False,
+                    'body': json.dumps({'chats': result})
+                }
         
         elif method == 'POST':
             body_data = json.loads(event.get('body', '{}'))
@@ -364,10 +504,10 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     chat_id = existing_chat['id']
                 else:
                     cur.execute('''
-                        INSERT INTO chats (client_id, status, client_name, phone, email, ip_address)
-                        VALUES (%s, 'waiting', %s, %s, %s, %s)
+                        INSERT INTO chats (client_id, status)
+                        VALUES (%s, 'waiting')
                         RETURNING id
-                    ''', (client_id, client_name, phone, email, ip_address))
+                    ''', (client_id,))
                     chat_id = cur.fetchone()['id']
                     
                     assign_chat_to_operator(cur, conn)
@@ -529,7 +669,7 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 score = body_data.get('score')
                 comment = body_data.get('comment', '')
                 
-                if not all([chat_id, operator_name, rated_by, score]):
+                if not all([chat_id, operator_name, rated_by, score is not None]):
                     return {
                         'statusCode': 400,
                         'headers': headers,
@@ -555,7 +695,7 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         'statusCode': 400,
                         'headers': headers,
                         'isBase64Encoded': False,
-                        'body': json.dumps({'error': 'Chat already rated'})
+                        'body': json.dumps({'error': 'Chat already rated by QC'})
                     }
                 
                 cur.execute('''
@@ -572,6 +712,192 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     'headers': headers,
                     'isBase64Encoded': False,
                     'body': json.dumps({'ratingId': rating_id})
+                }
+            
+            elif action == 'createEmployee':
+                username = body_data.get('username', '')
+                name = body_data.get('name', '')
+                role = body_data.get('role', 'operator')
+                password = body_data.get('password', '')
+                
+                if not all([username, name, password]):
+                    return {
+                        'statusCode': 400,
+                        'headers': headers,
+                        'isBase64Encoded': False,
+                        'body': json.dumps({'error': 'username, name, password required'})
+                    }
+                
+                cur.execute('''
+                    SELECT id FROM employees WHERE username = %s
+                ''', (username,))
+                existing_employee = cur.fetchone()
+                
+                if existing_employee:
+                    return {
+                        'statusCode': 400,
+                        'headers': headers,
+                        'isBase64Encoded': False,
+                        'body': json.dumps({'error': 'Username already exists'})
+                    }
+                
+                cur.execute('''
+                    INSERT INTO employees (username, name, role, password, status)
+                    VALUES (%s, %s, %s, %s, 'offline')
+                    RETURNING id
+                ''', (username, name, role, password))
+                employee_id = cur.fetchone()['id']
+                
+                conn.commit()
+                
+                return {
+                    'statusCode': 200,
+                    'headers': headers,
+                    'isBase64Encoded': False,
+                    'body': json.dumps({'employeeId': employee_id})
+                }
+            
+            elif action == 'submitClientRating':
+                chat_id = body_data.get('chatId')
+                score = body_data.get('score')
+                comment = body_data.get('comment', '')
+                
+                if not all([chat_id, score is not None]):
+                    return {
+                        'statusCode': 400,
+                        'headers': headers,
+                        'isBase64Encoded': False,
+                        'body': json.dumps({'error': 'chatId and score required'})
+                    }
+                
+                if score < 1 or score > 5:
+                    return {
+                        'statusCode': 400,
+                        'headers': headers,
+                        'isBase64Encoded': False,
+                        'body': json.dumps({'error': 'score must be between 1 and 5'})
+                    }
+                
+                cur.execute('''
+                    SELECT id FROM client_ratings WHERE chat_id = %s
+                ''', (chat_id,))
+                existing_rating = cur.fetchone()
+                
+                if existing_rating:
+                    return {
+                        'statusCode': 400,
+                        'headers': headers,
+                        'isBase64Encoded': False,
+                        'body': json.dumps({'error': 'Chat already rated by client'})
+                    }
+                
+                cur.execute('''
+                    INSERT INTO client_ratings (chat_id, score, comment)
+                    VALUES (%s, %s, %s)
+                    RETURNING id
+                ''', (chat_id, score, comment))
+                rating_id = cur.fetchone()['id']
+                
+                conn.commit()
+                
+                return {
+                    'statusCode': 200,
+                    'headers': headers,
+                    'isBase64Encoded': False,
+                    'body': json.dumps({'ratingId': rating_id})
+                }
+            
+            elif action == 'createCorporateChat':
+                title = body_data.get('title', '')
+                created_by = body_data.get('createdBy', '')
+                
+                if not all([title, created_by]):
+                    return {
+                        'statusCode': 400,
+                        'headers': headers,
+                        'isBase64Encoded': False,
+                        'body': json.dumps({'error': 'title and createdBy required'})
+                    }
+                
+                cur.execute('''
+                    INSERT INTO corporate_chats (title, created_by)
+                    VALUES (%s, %s)
+                    RETURNING id
+                ''', (title, created_by))
+                chat_id = cur.fetchone()['id']
+                
+                conn.commit()
+                
+                return {
+                    'statusCode': 200,
+                    'headers': headers,
+                    'isBase64Encoded': False,
+                    'body': json.dumps({'chatId': chat_id})
+                }
+            
+            elif action == 'sendCorporateMessage':
+                chat_id = body_data.get('chatId')
+                sender_name = body_data.get('senderName', '')
+                message_text = body_data.get('message', '')
+                
+                if not all([chat_id, sender_name, message_text]):
+                    return {
+                        'statusCode': 400,
+                        'headers': headers,
+                        'isBase64Encoded': False,
+                        'body': json.dumps({'error': 'chatId, senderName, message required'})
+                    }
+                
+                cur.execute('''
+                    INSERT INTO corporate_messages (chat_id, sender_name, message_text)
+                    VALUES (%s, %s, %s)
+                    RETURNING id, created_at
+                ''', (chat_id, sender_name, message_text))
+                result = cur.fetchone()
+                
+                cur.execute('''
+                    UPDATE corporate_chats SET updated_at = CURRENT_TIMESTAMP WHERE id = %s
+                ''', (chat_id,))
+                
+                conn.commit()
+                
+                return {
+                    'statusCode': 200,
+                    'headers': headers,
+                    'isBase64Encoded': False,
+                    'body': json.dumps({
+                        'messageId': result['id'],
+                        'createdAt': result['created_at'].isoformat()
+                    })
+                }
+            
+            elif action == 'createNews':
+                title = body_data.get('title', '')
+                content = body_data.get('content', '')
+                author = body_data.get('author', '')
+                
+                if not all([title, content, author]):
+                    return {
+                        'statusCode': 400,
+                        'headers': headers,
+                        'isBase64Encoded': False,
+                        'body': json.dumps({'error': 'title, content, author required'})
+                    }
+                
+                cur.execute('''
+                    INSERT INTO news (title, content, author, published_at)
+                    VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
+                    RETURNING id
+                ''', (title, content, author))
+                news_id = cur.fetchone()['id']
+                
+                conn.commit()
+                
+                return {
+                    'statusCode': 200,
+                    'headers': headers,
+                    'isBase64Encoded': False,
+                    'body': json.dumps({'newsId': news_id})
                 }
         
         elif method == 'PUT':
@@ -721,6 +1047,64 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     'isBase64Encoded': False,
                     'body': json.dumps({'success': True})
                 }
+            
+            elif action == 'updateEmployee':
+                employee_id = body_data.get('employeeId')
+                username = body_data.get('username')
+                name = body_data.get('name')
+                role = body_data.get('role')
+                password = body_data.get('password')
+                
+                if not employee_id:
+                    return {
+                        'statusCode': 400,
+                        'headers': headers,
+                        'isBase64Encoded': False,
+                        'body': json.dumps({'error': 'employeeId required'})
+                    }
+                
+                update_fields = []
+                update_values = []
+                
+                if username:
+                    update_fields.append('username = %s')
+                    update_values.append(username)
+                if name:
+                    update_fields.append('name = %s')
+                    update_values.append(name)
+                if role:
+                    update_fields.append('role = %s')
+                    update_values.append(role)
+                if password:
+                    update_fields.append('password = %s')
+                    update_values.append(password)
+                
+                if not update_fields:
+                    return {
+                        'statusCode': 400,
+                        'headers': headers,
+                        'isBase64Encoded': False,
+                        'body': json.dumps({'error': 'At least one field to update required'})
+                    }
+                
+                update_fields.append('updated_at = CURRENT_TIMESTAMP')
+                update_values.append(employee_id)
+                
+                query = f'''
+                    UPDATE employees 
+                    SET {', '.join(update_fields)}
+                    WHERE id = %s
+                '''
+                
+                cur.execute(query, update_values)
+                conn.commit()
+                
+                return {
+                    'statusCode': 200,
+                    'headers': headers,
+                    'isBase64Encoded': False,
+                    'body': json.dumps({'success': True})
+                }
         
         return {
             'statusCode': 404,
@@ -744,6 +1128,10 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
 
 def assign_chat_to_operator(cur, conn):
+    '''
+    Автоматическое назначение ожидающих чатов операторам онлайн
+    Максимум 2 активных чата на оператора
+    '''
     cur.execute('''
         SELECT name FROM employees 
         WHERE status = 'online'
