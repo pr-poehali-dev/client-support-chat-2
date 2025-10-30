@@ -164,49 +164,49 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
                 <h2 className="font-semibold text-foreground">{user.name}</h2>
                 <p className="text-xs text-muted-foreground">{getRoleName(user.role)}</p>
               </div>
-              {(user.role === 'operator' || user.role === 'okk') && (
-                <Select value={operatorStatus} onValueChange={setOperatorStatus}>
-                  <SelectTrigger className="w-[160px] h-9">
-                    <div className="flex items-center gap-2">
-                      <div className={`w-2 h-2 rounded-full ${getStatusColor(operatorStatus)}`} />
-                      <SelectValue />
-                    </div>
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="online">
-                      <div className="flex items-center gap-2">
-                        <div className="w-2 h-2 rounded-full bg-secondary" />
-                        На линии
-                      </div>
-                    </SelectItem>
-                    <SelectItem value="break">
-                      <div className="flex items-center gap-2">
-                        <div className="w-2 h-2 rounded-full bg-yellow-500" />
-                        Перерыв
-                      </div>
-                    </SelectItem>
-                    <SelectItem value="lunch">
-                      <div className="flex items-center gap-2">
-                        <div className="w-2 h-2 rounded-full bg-orange-500" />
-                        Обед
-                      </div>
-                    </SelectItem>
-                    <SelectItem value="training">
-                      <div className="flex items-center gap-2">
-                        <div className="w-2 h-2 rounded-full bg-blue-500" />
-                        Обучение
-                      </div>
-                    </SelectItem>
-                    <SelectItem value="dnd">
-                      <div className="flex items-center gap-2">
-                        <div className="w-2 h-2 rounded-full bg-destructive" />
-                        Не беспокоить
-                      </div>
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              )
             </div>
+            {(user.role === 'operator' || user.role === 'okk') && (
+              <Select value={operatorStatus} onValueChange={setOperatorStatus}>
+                <SelectTrigger className="w-[160px] h-9">
+                  <div className="flex items-center gap-2">
+                    <div className={`w-2 h-2 rounded-full ${getStatusColor(operatorStatus)}`} />
+                    <SelectValue />
+                  </div>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="online">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-secondary" />
+                      На линии
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="break">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-yellow-500" />
+                      Перерыв
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="lunch">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-orange-500" />
+                      Обед
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="training">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-blue-500" />
+                      Обучение
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="dnd">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-destructive" />
+                      Не беспокоить
+                    </div>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            )}
           </div>
           <Button variant="ghost" size="icon" onClick={onLogout}>
             <Icon name="LogOut" size={20} />
