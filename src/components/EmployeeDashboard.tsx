@@ -8,6 +8,9 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Progress } from '@/components/ui/progress';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
 import Icon from '@/components/ui/icon';
 
 interface User {
@@ -22,6 +25,12 @@ interface EmployeeDashboardProps {
 
 const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
   const [activeTab, setActiveTab] = useState('chats');
+  const [operatorStatus, setOperatorStatus] = useState<'online' | 'break' | 'lunch' | 'training' | 'dnd'>('online');
+  const [selectedChat, setSelectedChat] = useState<number | null>(null);
+  const [postponeDate, setPostponeDate] = useState('');
+  const [postponeTime, setPostponeTime] = useState('');
+  const [transferOperator, setTransferOperator] = useState('');
+  const [closeReason, setCloseReason] = useState('');
 
   const getRoleName = (role: string) => {
     switch (role) {
@@ -89,10 +98,32 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
   ];
 
   const mockMonitoring = [
-    { operator: 'Иван Петров', chats: 15, avgScore: 92, responseTime: 2.1, status: 'online' },
-    { operator: 'Мария Сидорова', chats: 12, avgScore: 88, responseTime: 3.5, status: 'online' },
-    { operator: 'Алексей Козлов', chats: 8, avgScore: 95, responseTime: 1.8, status: 'break' },
+    { id: 1, operator: 'Иван Петров', chats: 15, avgScore: 92, responseTime: 2.1, status: 'online' },
+    { id: 2, operator: 'Мария Сидорова', chats: 12, avgScore: 88, responseTime: 3.5, status: 'online' },
+    { id: 3, operator: 'Алексей Козлов', chats: 8, avgScore: 95, responseTime: 1.8, status: 'break' },
   ];
+
+  const getStatusName = (status: string) => {
+    const statusMap: Record<string, string> = {
+      online: 'На линии',
+      break: 'Перерыв',
+      lunch: 'Обед',
+      training: 'Обучение',
+      dnd: 'Не беспокоить',
+    };
+    return statusMap[status] || status;
+  };
+
+  const getStatusColor = (status: string) => {
+    const colorMap: Record<string, string> = {
+      online: 'bg-secondary',
+      break: 'bg-yellow-500',
+      lunch: 'bg-orange-500',
+      training: 'bg-blue-500',
+      dnd: 'bg-destructive',
+    };
+    return colorMap[status] || 'bg-muted';
+  };
 
   const [employees, setEmployees] = useState([
     { id: 1, username: 'operator', password: 'operator', name: 'Оператор КЦ', role: 'operator' },
@@ -133,6 +164,48 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
                 <h2 className="font-semibold text-foreground">{user.name}</h2>
                 <p className="text-xs text-muted-foreground">{getRoleName(user.role)}</p>
               </div>
+              {(user.role === 'operator' || user.role === 'okk') && (
+                <Select value={operatorStatus} onValueChange={(val: any) => setOperatorStatus(val)}>
+                  <SelectTrigger className="w-[160px] h-9">
+                    <div className="flex items-center gap-2">
+                      <div className={`w-2 h-2 rounded-full ${getStatusColor(operatorStatus)}`} />
+                      <SelectValue />
+                    </div>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="online">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-secondary" />
+                        На линии
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="break">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-yellow-500" />
+                        Перерыв
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="lunch">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-orange-500" />
+                        Обед
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="training">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-blue-500" />
+                        Обучение
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="dnd">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-destructive" />
+                        Не беспокоить
+                      </div>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              )
             </div>
           </div>
           <Button variant="ghost" size="icon" onClick={onLogout}>
@@ -162,7 +235,17 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
                     <Icon name="Users" size={20} />
                     Активные чаты с клиентами
                   </CardTitle>
-                  <CardDescription>Список текущих обращений</CardDescription>
+                  <CardDescription>
+                    Список текущих обращений • Новые чаты автоматически распределяются на операторов со статусом "На линии"
+                  </CardDescription>
+                  <div className="mt-4 p-3 rounded-lg bg-primary/10 border border-primary/20">
+                    <div className="flex items-center gap-2 text-sm">
+                      <Icon name="Info" size={16} className="text-primary" />
+                      <span className="text-foreground">
+                        Автораспределение активно. Чаты назначаются оператору с наименьшей нагрузкой.
+                      </span>
+                    </div>
+                  </div>
                 </CardHeader>
                 <CardContent>
                   <ScrollArea className="h-[500px]">
@@ -170,24 +253,45 @@ const EmployeeDashboard = ({ user, onLogout }: EmployeeDashboardProps) => {
                       {mockChats.filter(c => c.status === 'active').map((chat) => (
                         <div
                           key={chat.id}
-                          className="flex items-center gap-4 p-4 rounded-lg bg-muted hover:bg-muted/80 transition-colors cursor-pointer"
+                          className="p-4 rounded-lg border border-border bg-card hover:shadow-md transition-shadow"
                         >
-                          <Avatar className="w-12 h-12 bg-secondary">
-                            <AvatarFallback>{chat.client.charAt(0)}</AvatarFallback>
-                          </Avatar>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
-                              <h4 className="font-semibold text-foreground">{chat.client}</h4>
-                              {chat.unread > 0 && (
-                                <Badge variant="default" className="text-xs">
-                                  {chat.unread}
-                                </Badge>
-                              )}
+                          <div className="flex items-center gap-4 mb-3">
+                            <Avatar className="w-12 h-12 bg-secondary">
+                              <AvatarFallback>{chat.client.charAt(0)}</AvatarFallback>
+                            </Avatar>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <h4 className="font-semibold text-foreground">{chat.client}</h4>
+                                {chat.unread > 0 && (
+                                  <Badge variant="default" className="text-xs">
+                                    {chat.unread}
+                                  </Badge>
+                                )}
+                              </div>
+                              <p className="text-xs text-muted-foreground">{chat.phone}</p>
+                              <p className="text-sm text-muted-foreground truncate">{chat.lastMessage}</p>
                             </div>
-                            <p className="text-xs text-muted-foreground">{chat.phone}</p>
-                            <p className="text-sm text-muted-foreground truncate">{chat.lastMessage}</p>
+                            <span className="text-xs text-muted-foreground">{chat.time}</span>
                           </div>
-                          <span className="text-xs text-muted-foreground">{chat.time}</span>
+                          
+                          <div className="flex gap-2 flex-wrap">
+                            <Button variant="default" size="sm" className="bg-secondary hover:bg-secondary/90">
+                              <Icon name="CheckCircle" size={14} className="mr-1" />
+                              Завершить
+                            </Button>
+                            <Button variant="outline" size="sm">
+                              <Icon name="Clock" size={14} className="mr-1" />
+                              Отложить
+                            </Button>
+                            <Button variant="outline" size="sm">
+                              <Icon name="AlertTriangle" size={14} className="mr-1" />
+                              Эскалировать
+                            </Button>
+                            <Button variant="outline" size="sm">
+                              <Icon name="UserCog" size={14} className="mr-1" />
+                              Перевести
+                            </Button>
+                          </div>
                         </div>
                       ))}
                     </div>
